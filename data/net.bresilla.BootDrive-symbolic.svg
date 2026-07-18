@@ -1,14 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-  <!-- Symbolic variant: USB drive + power/boot glyph, single colour. -->
-  <g fill="#2e3436">
-    <!-- connector -->
-    <rect x="6.5" y="1" width="3" height="2.2" rx="0.4"/>
-    <!-- drive body outline -->
-    <path d="M5 3h6a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm0 1.3A0.7.7 0 0 0 4.3 5v7a.7.7 0 0 0 .7.7h6a.7.7 0 0 0 .7-.7V5a.7.7 0 0 0-.7-.7z"/>
-    <!-- power stem -->
-    <rect x="7.35" y="5.4" width="1.3" height="3.2" rx="0.65"/>
-    <!-- power ring (open at top) -->
-    <path d="M6.1 6.5a2.6 2.6 0 1 0 3.8 0 .65.65 0 0 0-.98.86 1.3 1.3 0 1 1-1.84 0 .65.65 0 0 0-.98-.86z"/>
+  <!-- Symbolic variant: eject / boot mark, single colour. -->
+  <g fill="#2e3436" stroke="#2e3436" stroke-linejoin="round">
+    <path d="M8 3.2 L12.4 9 H3.6 Z" stroke-width="1.4"/>
+    <rect x="3.6" y="11" width="8.8" height="2" rx="1" stroke="none"/>
   </g>
 </svg>
