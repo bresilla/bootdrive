@@ -41,6 +41,8 @@ modules:
         /app/share/metainfo/net.bresilla.BootDrive.metainfo.xml
       - install -Dm644 data/net.bresilla.BootDrive.svg
         /app/share/icons/hicolor/scalable/apps/net.bresilla.BootDrive.svg
+      - install -Dm644 data/net.bresilla.BootDrive-symbolic.svg
+        /app/share/icons/hicolor/symbolic/apps/net.bresilla.BootDrive-symbolic.svg
     sources:
       - type: dir
         path: ..

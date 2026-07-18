@@ -1,22 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#3584e4"/>
-      <stop offset="1" stop-color="#1c71d8"/>
-    </linearGradient>
-  </defs>
-  <rect x="8" y="8" width="112" height="112" rx="26" fill="url(#bg)"/>
-  <!-- USB stick body -->
-  <rect x="48" y="30" width="32" height="52" rx="6" fill="#ffffff"/>
-  <rect x="56" y="20" width="16" height="14" rx="3" fill="#deddda"/>
-  <!-- USB trident mark -->
-  <g stroke="#1c71d8" stroke-width="4" stroke-linecap="round" fill="none">
-    <line x1="64" y1="44" x2="64" y2="72"/>
-    <line x1="64" y1="52" x2="55" y2="60"/>
-    <line x1="64" y1="58" x2="73" y2="52"/>
-    <circle cx="64" cy="44" r="3" fill="#1c71d8"/>
-  </g>
-  <!-- boot arrow -->
-  <path d="M64 92 l-12 14 h8 v10 h8 v-10 h8 z" fill="#ffffff"/>
+  <!-- BootDrive app icon. GNOME HIG: 128px canvas, light from above, a darker
+       front face at the bottom for depth, flat colours on the straight body,
+       GNOME palette. A USB flash drive carrying a power/boot glyph. -->
+
+  <!-- Metal USB connector, plugged into the top of the body -->
+  <rect x="51" y="14" width="26" height="28" rx="3" fill="#9a9996"/>
+  <rect x="51" y="14" width="26" height="26" rx="3" fill="#c0bfbc"/>
+  <rect x="57" y="20" width="14" height="8" rx="1.5" fill="#f6f5f4"/>
+
+  <!-- Drive body: base provides the 2px outline + 4px front face -->
+  <rect x="38" y="38" width="52" height="74" rx="12" fill="#1a5fb4"/>
+  <!-- Top face -->
+  <rect x="40" y="40" width="48" height="66" rx="10" fill="#3584e4"/>
+  <!-- Top highlight (light from above) -->
+  <rect x="45" y="45" width="38" height="5" rx="2.5" fill="#62a0ea"/>
+
+  <!-- Power / boot glyph -->
+  <circle cx="64" cy="78" r="15" fill="none" stroke="#ffffff" stroke-width="6"/>
+  <!-- Gap at the top of the ring -->
+  <rect x="54" y="50" width="20" height="16" fill="#3584e4"/>
+  <!-- Stem through the gap -->
+  <rect x="61" y="54" width="6" height="26" rx="3" fill="#ffffff"/>
 </svg>

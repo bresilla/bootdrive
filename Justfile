@@ -37,6 +37,10 @@ cross-backend:
 deploy host="100.68.168.31":
     ./tools/deploy-phone.sh {{host}}
 
+# Install/update the GUI Flatpak on the phone from the latest CI build (no sudo).
+install-phone host="100.68.168.31":
+    ./tools/install-phone.sh {{host}}
+
 # Low-level hardware proof: expose one ISO, then Ctrl-C to clean up.
 probe image:
     sudo -E cargo run --package bootdrived --bin probe -- {{image}}
