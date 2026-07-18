@@ -36,6 +36,10 @@ cross-usb-signaller:
 install-phone host="100.68.168.31":
     ./tools/install-phone.sh {{host}}
 
+# Build + install the patched usb-signaller on the phone (prompts for sudo there).
+deploy-usb-signaller host="100.68.168.31":
+    ./tools/deploy-usb-signaller.sh {{host}}
+
 # Regenerate the offline Cargo sources for the Flatpak build.
 flatpak-sources:
     ./tools/update-flatpak-sources.sh
