@@ -1,23 +1,45 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <!-- BootDrive app icon (GNOME HIG). A full-weight tile with a bold play/boot
-       mark: a bar and a play triangle ( |> ) — "start / boot from media".
-       Light from above. -->
+  <!-- BootDrive app icon (GNOME HIG / Circle style). A dimensional media disc
+       filling the canvas with a bold play/boot mark ( |> ). Beveled raised
+       edge (light from above), gradient face, glossy sheen. -->
   <defs>
-    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#3584e4"/>
-      <stop offset="1" stop-color="#813d9c"/>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b6ccf6"/>
+      <stop offset="1" stop-color="#173f74"/>
+    </linearGradient>
+    <linearGradient id="face" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#4a90e8"/>
+      <stop offset="1" stop-color="#7a3fb0"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="38%" cy="30%" r="60%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.5"/>
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="hub" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6aa6ee"/>
+      <stop offset="1" stop-color="#5330a0"/>
     </linearGradient>
   </defs>
 
-  <!-- Base tile (fills the canvas for proper visual weight) -->
-  <rect x="8" y="10" width="112" height="112" rx="27" fill="#4a2168"/>
-  <rect x="8" y="8" width="112" height="112" rx="27" fill="url(#tile)"/>
-  <!-- top highlight (light from above) -->
-  <rect x="18" y="16" width="92" height="42" rx="20" fill="#ffffff" opacity="0.12"/>
+  <!-- raised beveled edge -->
+  <circle cx="64" cy="64" r="56" fill="url(#rim)"/>
+  <!-- disc face -->
+  <circle cx="64" cy="64" r="49" fill="url(#face)"/>
+  <!-- concentric grooves -->
+  <circle cx="64" cy="64" r="45" fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="1.5"/>
+  <circle cx="64" cy="64" r="36" fill="none" stroke="#1a2f6b" stroke-opacity="0.18" stroke-width="1.5"/>
+  <!-- glossy sheen -->
+  <circle cx="64" cy="64" r="49" fill="url(#sheen)"/>
+  <!-- raised centre hub -->
+  <circle cx="64" cy="64" r="31" fill="url(#hub)"/>
+  <circle cx="64" cy="64" r="31" fill="none" stroke="#3a2270" stroke-opacity="0.5" stroke-width="1.5"/>
 
   <!-- |>  play / boot mark -->
-  <rect x="37" y="43" width="14" height="42" rx="7" fill="#ffffff"/>
-  <path d="M60 43 L94 64 L60 85 Z" fill="#ffffff" stroke="#ffffff"
-        stroke-width="8" stroke-linejoin="round"/>
+  <g>
+    <rect x="47" y="52" width="9" height="24" rx="4.5" fill="#0e1b4d" opacity="0.25" transform="translate(0,2)"/>
+    <path d="M61 51 L84 64 L61 77 Z" fill="#0e1b4d" opacity="0.25" transform="translate(0,2)"/>
+    <rect x="47" y="52" width="9" height="24" rx="4.5" fill="#ffffff"/>
+    <path d="M61 51 L84 64 L61 77 Z" fill="#ffffff" stroke="#ffffff" stroke-width="5" stroke-linejoin="round"/>
+  </g>
 </svg>
