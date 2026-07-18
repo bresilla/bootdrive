@@ -130,11 +130,20 @@ async fn worker(
         }
     };
 
-    let proxy = match UsbModedProxy::new(&conn).await {
+    // usb-signaller's D-Bus policy blocks org.freedesktop.DBus.Properties, so
+    // we must NOT let zbus cache properties (it would call GetAll and be
+    // denied). Disable caching; we only use plain methods and a signal.
+    let proxy = match UsbModedProxy::builder(&conn)
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await
+    {
         Ok(p) => p,
-        Err(_) => {
+        Err(e) => {
             let _ = updates
-                .send(DaemonUpdate::Unreachable(UnreachableReason::NotRunning))
+                .send(DaemonUpdate::Unreachable(UnreachableReason::Other(
+                    e.to_string(),
+                )))
                 .await;
             return;
         }

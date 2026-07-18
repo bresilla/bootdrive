@@ -61,7 +61,11 @@ async fn main() -> Result<()> {
     let conn = zbus::Connection::system()
         .await
         .context("cannot connect to the system bus")?;
-    let proxy = UsbModedProxy::new(&conn)
+    // usb-signaller blocks org.freedesktop.DBus.Properties in its policy, so
+    // disable zbus property caching (it would call GetAll and be denied).
+    let proxy = UsbModedProxy::builder(&conn)
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
         .await
         .context("usb-signaller (com.meego.usb_moded) is not reachable")?;
 
