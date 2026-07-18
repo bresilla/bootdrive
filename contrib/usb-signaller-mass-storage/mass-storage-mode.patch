@@ -1,0 +1,258 @@
+diff --git a/src/main.rs b/src/main.rs
+index 102c468..ba6a519 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -40,7 +40,11 @@ use crate::urs::URSRole;
+ use udc::discover_udcs;
+ use urs::discover_urss;
+ 
+-struct UsbSignaller {}
++struct UsbSignaller {
++    /* Backing image + CD-ROM flag for mass_storage_mode, set via set_config */
++    mass_storage_image: Option<String>,
++    mass_storage_cdrom: bool,
++}
+ 
+ fn udcmode_to_string(mode: UDCMode) -> &'static str {
+     let result = match mode {
+@@ -49,6 +53,7 @@ fn udcmode_to_string(mode: UDCMode) -> &'static str {
+         UDCMode::Charging => "charging_only",
+         UDCMode::MTP => "mtp_ffs_mode",
+         UDCMode::Accessory => "aoa_ffs_mode",
++        UDCMode::MassStorage => "mass_storage_mode",
+         UDCMode::Netboot => "netboot_mode",
+         UDCMode::Unknown => "unknown_mode",
+     };
+@@ -67,6 +72,7 @@ fn string_to_udcmode(mode: &str) -> UDCMode {
+         "charging_only" => UDCMode::Charging,
+         "mtp_ffs_mode" => UDCMode::MTP,
+         "aoa_ffs_mode" => UDCMode::Accessory,
++        "mass_storage_mode" => UDCMode::MassStorage,
+         "netboot_mode" => UDCMode::Accessory,
+         "unknown_mode" => UDCMode::Unknown,
+         _ => UDCMode::Unknown,
+@@ -100,7 +106,7 @@ fn run_dbus_server() -> Result<(), Box<dyn std::error::Error>> {
+             "set_mode",
+             ("mode",),
+             ("mode",),
+-            move |ctx: &mut Context, _data: &mut UsbSignaller, (mode,): (String,)| {
++            move |ctx: &mut Context, data: &mut UsbSignaller, (mode,): (String,)| {
+                 println!("ℹ️  DBus: set_mode({mode})");
+ 
+                 /* Netboot mode may never be interrupted */
+@@ -149,7 +155,12 @@ fn run_dbus_server() -> Result<(), Box<dyn std::error::Error>> {
+                 /* Apply the mode to discovered UDCs */
+                 for name in &discover_udcs() {
+                     if let Ok(udc) = UDC::load(name) {
+-                        let result = UDC::set_mode(udc, target_mode.clone());
++                        let result = UDC::set_mode(
++                            udc,
++                            target_mode.clone(),
++                            data.mass_storage_image.clone(),
++                            data.mass_storage_cdrom,
++                        );
+                         if let Ok(udc) = result {
+                             println!("UDC reconfigured:");
+                             println!("  Name: {}", udc.name);
+@@ -255,8 +266,9 @@ fn run_dbus_server() -> Result<(), Box<dyn std::error::Error>> {
+                  * Netboot mode is never available for users.
+                  * Unknown and disconnected modes are internal modes.
+                  */
+-                let mut available_modes =
+-                    String::from("developer_mode,tethering_mode,charging_only,mtp_ffs_mode");
++                let mut available_modes = String::from(
++                    "developer_mode,tethering_mode,charging_only,mtp_ffs_mode,mass_storage_mode",
++                );
+ 
+                 /* USB Role Switcher is required for host mode */
+                 for name in &discover_urss() {
+@@ -269,9 +281,68 @@ fn run_dbus_server() -> Result<(), Box<dyn std::error::Error>> {
+                 Ok((available_modes.clone(),))
+             },
+         );
++
++        /*
++         * set_config
++         * Set configuration used by modes that need parameters. Currently used
++         * by mass_storage_mode to receive the backing image. Format is a
++         * comma-separated list of key=value pairs, e.g.
++         *   "image=/path/to.iso,cdrom=1"
++         * @param config: the configuration string
++         * @return config: the accepted configuration
++         */
++        iface.method(
++            "set_config",
++            ("config",),
++            ("config",),
++            move |_ctx: &mut Context, data: &mut UsbSignaller, (config,): (String,)| {
++                println!("ℹ️  DBus: set_config({config})");
++                for pair in config.split(',') {
++                    let Some((key, value)) = pair.split_once('=') else {
++                        continue;
++                    };
++                    match key.trim() {
++                        "image" => {
++                            let value = value.trim();
++                            data.mass_storage_image =
++                                (!value.is_empty()).then(|| value.to_string());
++                        }
++                        "cdrom" => {
++                            let value = value.trim();
++                            data.mass_storage_cdrom = value == "1" || value == "true";
++                        }
++                        other => println!("Ignoring unknown config key: {other}"),
++                    }
++                }
++                Ok((config,))
++            },
++        );
++
++        /*
++         * get_config
++         * Return the currently stored configuration.
++         * @return config: the configuration string
++         */
++        iface.method(
++            "get_config",
++            (),
++            ("config",),
++            move |_ctx: &mut Context, data: &mut UsbSignaller, ()| {
++                let image = data.mass_storage_image.clone().unwrap_or_default();
++                let cdrom = if data.mass_storage_cdrom { 1 } else { 0 };
++                Ok((format!("image={image},cdrom={cdrom}"),))
++            },
++        );
+     });
+ 
+-    crossroads.insert("/com/meego/usb_moded", &[iface_token], UsbSignaller {});
++    crossroads.insert(
++        "/com/meego/usb_moded",
++        &[iface_token],
++        UsbSignaller {
++            mass_storage_image: None,
++            mass_storage_cdrom: true,
++        },
++    );
+ 
+     /* Serve DBus clients as server forever */
+     crossroads.serve(&connection)?;
+diff --git a/src/udc.rs b/src/udc.rs
+index 2a5549c..81b734f 100644
+--- a/src/udc.rs
++++ b/src/udc.rs
+@@ -19,7 +19,7 @@
+ use crate::gadget::ConfigFsGadget;
+ use crate::gadget::discover_gadgets;
+ use crate::service::{service_start, service_stop};
+-use crate::sysfs::{sysfs_mount_functionfs, sysfs_read, sysfs_umount_functionfs};
++use crate::sysfs::{sysfs_mount_functionfs, sysfs_read, sysfs_umount_functionfs, sysfs_write};
+ use crate::utils::dir_entries;
+ use std::path::PathBuf;
+ 
+@@ -49,6 +49,7 @@ pub enum UDCMode {
+     Netboot,
+     MTP,
+     Accessory,
++    MassStorage,
+     Unknown,
+ }
+ 
+@@ -99,7 +100,12 @@ impl UDC {
+         }
+     }
+ 
+-    pub fn set_mode(udc: Self, mode: UDCMode) -> Result<Self, Box<dyn std::error::Error>> {
++    pub fn set_mode(
++        udc: Self,
++        mode: UDCMode,
++        image: Option<String>,
++        cdrom: bool,
++    ) -> Result<Self, Box<dyn std::error::Error>> {
+         println!(
+             "Setting mode of UDC {} from {:?} to {:?}",
+             udc.name, udc.mode, mode
+@@ -206,6 +212,22 @@ impl UDC {
+ 
+                 return UDC::load(&udc.name);
+             }
++            UDCMode::MassStorage => {
++                /* Mass storage requires a backing image, set via set_config */
++                if image.is_none() {
++                    return Err(
++                        "Mass storage mode requires an image (call set_config image=/path first)"
++                            .into(),
++                    );
++                }
++                name = "usb-signaller-mass-storage";
++                vendor = "Linux Foundation";
++                product = "Mass Storage USB gadget";
++                id_vendor = 0x1D6B; /* Linux Foundation */
++                id_product = 0x0104; /* Multifunction Composite / storage */
++                default_function = "mass_storage.0";
++                configuration_description = "Mass storage mode";
++            }
+             UDCMode::Unknown => {
+                 return Err("Cannot set UDC to mode 'Unknown'".into());
+             }
+@@ -361,6 +383,48 @@ impl UDC {
+                     }
+                 };
+             }
++            UDCMode::MassStorage => {
++                /*
++                 * Configure the LUN backing file. cdrom/ro/removable must be
++                 * written before 'file', which activates the LUN.
++                 */
++                let image = image.expect("mass storage image checked above");
++                let lun = PathBuf::from("/sys/kernel/config")
++                    .join("usb_gadget")
++                    .join(new_gadget.name.as_str())
++                    .join("functions")
++                    .join("mass_storage.0")
++                    .join("lun.0");
++
++                let configure = || -> Result<(), Box<dyn std::error::Error>> {
++                    sysfs_write(lun.join("cdrom"), if cdrom { "1" } else { "0" })?;
++                    sysfs_write(lun.join("ro"), "1")?;
++                    sysfs_write(lun.join("removable"), "1")?;
++                    /* Setting the file last exposes the medium read-only */
++                    sysfs_write(lun.join("file"), image.as_str())?;
++                    Ok(())
++                };
++
++                if let Err(error) = configure() {
++                    eprintln!("Failed to configure mass storage LUN: {error:?}");
++                    let _ = ConfigFsGadget::disable(new_gadget.name.as_str());
++                    ConfigFsGadget::delete(new_gadget.name.as_str())?;
++                    return UDC::load(&udc.name);
++                }
++
++                /* Enable gadget */
++                match ConfigFsGadget::enable(new_gadget.name.as_str(), &udc.name) {
++                    Ok(()) => println!("Gadget enabled: {}", new_gadget.name),
++                    Err(error) => {
++                        eprintln!("Failed to enable gadget: {} ({:?})", new_gadget.name, error);
++                        let _ = ConfigFsGadget::disable(new_gadget.name.as_str());
++                        ConfigFsGadget::delete(new_gadget.name.as_str())?;
++                        let new_udc = UDC::load(&udc.name)?;
++
++                        return Ok(new_udc);
++                    }
++                };
++            }
+             _ => {
+                 println!("No service needs to be started for mode {mode:?}");
+             }
+@@ -405,6 +469,12 @@ impl UDC {
+                         .starts_with("ffs.accessory")
+                     {
+                         mode = UDCMode::Accessory;
++                    /* USB mass-storage gadget */
++                    } else if entry.configs[0].functions[0]
++                        .name
++                        .starts_with("mass_storage.")
++                    {
++                        mode = UDCMode::MassStorage;
+                     } else {
+                         mode = UDCMode::Unknown;
+                         eprintln!(

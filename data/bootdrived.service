@@ -1,0 +1,19 @@
+[Unit]
+Description=BootDrive USB mass-storage backend
+Documentation=https://github.com/bresilla/bootdrive
+# usb-signaller owns the UDC normally; bootdrived coordinates with it at runtime.
+After=dbus.service
+Wants=dbus.service
+
+[Service]
+Type=dbus
+BusName=net.bresilla.BootDrive1
+ExecStart=/usr/libexec/bootdrived
+Restart=on-failure
+RuntimeDirectory=bootdrived
+# The service must be root to write configfs; keep the rest tight.
+ProtectHome=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

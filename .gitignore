@@ -1,0 +1,28 @@
+*.exe
+*.test
+*.out
+/bootdrive
+/coverage.out
+/bin
+/build
+/nimcache
+/dist
+/result
+/.direnv
+/.devbox
+/.zig-cache
+/zig-out
+/target
+/build-flatpak
+/.flatpak-builder
+/tools/flatpak-cargo-generator.py
+compile_commands.json
+.complog
+.quickfix
+/.xbuild
+
+# The user's global gitignore excludes **/data, but this project's data/
+# directory holds the Flatpak manifest, metainfo, icon, D-Bus/polkit files and
+# the vendored cargo-sources.json — all of which must be tracked.
+!/data/
+!/data/**

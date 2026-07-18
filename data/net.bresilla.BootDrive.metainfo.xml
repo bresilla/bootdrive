@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>net.bresilla.BootDrive</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>BootDrive</name>
+  <summary>Expose a disk image as a bootable USB drive</summary>
+
+  <description>
+    <p>
+      BootDrive turns your postmarketOS phone into a bootable USB drive. Select
+      one ISO or raw disk image and expose it to a connected computer as a
+      bootable USB CD-ROM or USB disk, then eject to return to normal USB
+      behaviour.
+    </p>
+    <p>
+      BootDrive is deliberately small: it exposes exactly one image at a time,
+      always read-only, and relies on a privileged system helper for the
+      low-level USB gadget work so the app itself stays sandboxed.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">net.bresilla.BootDrive.desktop</launchable>
+
+  <requires>
+    <control>touch</control>
+  </requires>
+  <recommends>
+    <display_length compare="ge">360</display_length>
+  </recommends>
+
+  <categories>
+    <category>System</category>
+    <category>Utility</category>
+  </categories>
+
+  <content_rating type="oars-1.1"/>
+
+  <url type="homepage">https://github.com/bresilla/bootdrive</url>
+  <url type="bugtracker">https://github.com/bresilla/bootdrive/issues</url>
+
+  <developer id="net.bresilla">
+    <name>Kushtrim Bresilla</name>
+  </developer>
+
+  <releases>
+    <release version="0.1.0" date="2026-07-18">
+      <description>
+        <p>First release: select one image and expose it as a bootable USB drive.</p>
+      </description>
+    </release>
+  </releases>
+</component>

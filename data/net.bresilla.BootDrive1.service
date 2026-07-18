@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=net.bresilla.BootDrive1
+Exec=/usr/libexec/bootdrived
+User=root
+SystemdService=bootdrived.service

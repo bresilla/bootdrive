@@ -1,0 +1,46 @@
+name: flatpak
+
+# Build the BootDrive GUI Flatpak for x86_64 AND aarch64 on GitHub's own
+# runners — no phone or local aarch64 hardware needed. Each build uploads an
+# installable single-file bundle you can download from the run's artifacts and
+# `flatpak install ./bootdrive-<arch>.flatpak`.
+#
+# This mirrors what Flathub's buildbot does after you submit the app (see
+# FLATHUB.md): it builds every supported arch on its infrastructure.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  flatpak:
+    name: "Flatpak (${{ matrix.variant.arch }})"
+    runs-on: ${{ matrix.variant.runner }}
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify vendored Cargo sources are in sync with Cargo.lock
+        run: |
+          test -f data/cargo-sources.json \
+            || { echo "data/cargo-sources.json missing — run tools/update-flatpak-sources.sh"; exit 1; }
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: bootdrive-${{ matrix.variant.arch }}.flatpak
+          manifest-path: data/net.bresilla.BootDrive.yml
+          cache-key: flatpak-builder-${{ matrix.variant.arch }}-${{ github.sha }}
+          arch: ${{ matrix.variant.arch }}

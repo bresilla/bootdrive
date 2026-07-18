@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  PolicyKit action for BootDrive.
+
+  Intended for a distributable build: gate exposing an image on the active,
+  local user authenticating. The development build may rely on the `bootdrive`
+  group instead (see net.bresilla.BootDrive1.conf).
+-->
+<policyconfig>
+  <vendor>BootDrive</vendor>
+  <vendor_url>https://github.com/bresilla/bootdrive</vendor_url>
+
+  <action id="net.bresilla.bootdrive.activate">
+    <description>Expose a disk image as a bootable USB drive</description>
+    <message>Authentication is required to expose a bootable USB drive</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_self_keep</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

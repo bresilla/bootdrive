@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=BootDrive
+Comment=Expose a disk image as a bootable USB drive
+Type=Application
+Exec=bootdrive-gui
+Icon=net.bresilla.BootDrive
+Terminal=false
+Categories=System;
+Keywords=USB;ISO;boot;image;gadget;
+StartupNotify=true
