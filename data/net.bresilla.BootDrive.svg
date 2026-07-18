@@ -1,25 +1,44 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <!-- BootDrive app icon. GNOME HIG: 128px canvas, light from above, a darker
-       front face at the bottom for depth, flat colours on the straight body,
-       GNOME palette. A USB flash drive carrying a power/boot glyph. -->
+  <!-- BootDrive app icon (GNOME HIG). A bootable CD-ROM disc in the back with a
+       USB flash drive in the front — the two USB modes BootDrive exposes.
+       Light from above; the curved disc uses a gradient, the straight USB body
+       stays flat; GNOME palette. -->
+  <defs>
+    <radialGradient id="disc" cx="42%" cy="34%" r="72%">
+      <stop offset="0" stop-color="#f6f5f4"/>
+      <stop offset="0.5" stop-color="#99c1f1"/>
+      <stop offset="1" stop-color="#3584e4"/>
+    </radialGradient>
+  </defs>
 
-  <!-- Metal USB connector, plugged into the top of the body -->
-  <rect x="51" y="14" width="26" height="28" rx="3" fill="#9a9996"/>
-  <rect x="51" y="14" width="26" height="26" rx="3" fill="#c0bfbc"/>
-  <rect x="57" y="20" width="14" height="8" rx="1.5" fill="#f6f5f4"/>
+  <!-- CD-ROM disc (back) -->
+  <g>
+    <circle cx="50" cy="54" r="40" fill="url(#disc)" stroke="#1a5fb4" stroke-width="2"/>
+    <!-- iridescence hint -->
+    <path d="M50 14a40 40 0 0 1 34 19" fill="none" stroke="#ffffff" stroke-width="4"
+          stroke-linecap="round" opacity="0.55"/>
+    <path d="M20 74a40 40 0 0 0 30 20" fill="none" stroke="#dc8add" stroke-width="3"
+          stroke-linecap="round" opacity="0.35"/>
+    <!-- inner ring + hub -->
+    <circle cx="50" cy="54" r="15" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.7"/>
+    <circle cx="50" cy="54" r="9" fill="#f6f5f4" stroke="#9a9996" stroke-width="1.5"/>
+    <circle cx="50" cy="54" r="4" fill="#ffffff" stroke="#9a9996" stroke-width="1"/>
+  </g>
 
-  <!-- Drive body: base provides the 2px outline + 4px front face -->
-  <rect x="38" y="38" width="52" height="74" rx="12" fill="#1a5fb4"/>
-  <!-- Top face -->
-  <rect x="40" y="40" width="48" height="66" rx="10" fill="#3584e4"/>
-  <!-- Top highlight (light from above) -->
-  <rect x="45" y="45" width="38" height="5" rx="2.5" fill="#62a0ea"/>
-
-  <!-- Power / boot glyph -->
-  <circle cx="64" cy="78" r="15" fill="none" stroke="#ffffff" stroke-width="6"/>
-  <!-- Gap at the top of the ring -->
-  <rect x="54" y="50" width="20" height="16" fill="#3584e4"/>
-  <!-- Stem through the gap -->
-  <rect x="61" y="54" width="6" height="26" rx="3" fill="#ffffff"/>
+  <!-- USB flash drive (front) -->
+  <g>
+    <!-- metal connector -->
+    <rect x="71" y="22" width="18" height="24" rx="2.5" fill="#9a9996"/>
+    <rect x="71" y="22" width="18" height="22" rx="2.5" fill="#c0bfbc"/>
+    <rect x="76" y="27" width="8" height="7" rx="1.5" fill="#f6f5f4"/>
+    <!-- body: base = outline + front face, then top face -->
+    <rect x="60" y="40" width="40" height="78" rx="12" fill="#1a5fb4"/>
+    <rect x="62" y="42" width="36" height="72" rx="10" fill="#3584e4"/>
+    <rect x="67" y="47" width="26" height="4" rx="2" fill="#62a0ea"/>
+    <!-- power / boot glyph -->
+    <circle cx="80" cy="82" r="13" fill="none" stroke="#ffffff" stroke-width="5.5"/>
+    <rect x="70" y="63" width="20" height="15" fill="#3584e4"/>
+    <rect x="77" y="66" width="6" height="24" rx="3" fill="#ffffff"/>
+  </g>
 </svg>
