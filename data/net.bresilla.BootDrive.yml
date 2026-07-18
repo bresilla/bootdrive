@@ -21,7 +21,11 @@ finish-args:
   - --socket=wayland
   - --socket=fallback-x11
   - --device=dri
-  # The only host access BootDrive needs: talk to its system backend.
+  # Read-only host access so the file chooser returns a REAL host path (not a
+  # document-portal FUSE path). The root backend runs outside the sandbox and
+  # can only open real paths; it never sees the portal mount.
+  - --filesystem=host:ro
+  # Talk to the system backend.
   - --system-talk-name=net.bresilla.BootDrive1
 
 build-options:
