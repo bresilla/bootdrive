@@ -26,16 +26,18 @@ echo "==> copying to $HOST…"
 scp $SSH_OPTS "$BIN" "$HOST:~/usb-signaller.patched"
 
 echo "==> installing (enter your sudo password when prompted)…"
+# STAGED expands in the login shell to the real path; each sudo then uses the
+# absolute path (under sudo, ~ would resolve to /root, not your home).
 ssh $SSH_OPTS -t "$HOST" '
 set -e
+STAGED="$HOME/usb-signaller.patched"
 sudo sh -c "
-  install -m755 ~/usb-signaller.patched /usr/bin/usb-signaller.patched
   [ -e /usr/bin/usb-signaller.orig ] || cp -a /usr/bin/usb-signaller /usr/bin/usb-signaller.orig
-  install -m755 ~/usb-signaller.patched /usr/bin/usb-signaller
+  install -m755 \"$STAGED\" /usr/bin/usb-signaller
   systemctl restart usb-signaller
 "
 sleep 1
-echo "--- supported modes now: ---"
+echo "--- supported modes now (expect mass_storage_mode): ---"
 busctl call com.meego.usb_moded /com/meego/usb_moded com.meego.usb_moded get_modes
 '
 echo "==> done. (stock binary backed up at /usr/bin/usb-signaller.orig on the phone)"
