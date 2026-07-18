@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-  <!-- Symbolic variant: eject / boot mark, single colour. -->
-  <g fill="#2e3436" stroke="#2e3436" stroke-linejoin="round">
-    <path d="M8 3.2 L12.4 9 H3.6 Z" stroke-width="1.4"/>
-    <rect x="3.6" y="11" width="8.8" height="2" rx="1" stroke="none"/>
+  <!-- Symbolic variant: |> play / boot mark, single colour. -->
+  <g fill="#2e3436">
+    <rect x="4" y="4.5" width="2.2" height="7" rx="1.1"/>
+    <path d="M7.6 4.5 L12.2 8 L7.6 11.5 Z" stroke="#2e3436" stroke-width="1.2"
+          stroke-linejoin="round"/>
   </g>
 </svg>

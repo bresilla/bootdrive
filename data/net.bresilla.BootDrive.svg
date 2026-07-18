@@ -1,24 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <!-- BootDrive app icon (GNOME HIG). A full-weight app tile with a bold,
-       abstract eject/boot mark — the universal symbol for removable bootable
-       media. Light from above. -->
+  <!-- BootDrive app icon (GNOME HIG). A full-weight tile with a bold play/boot
+       mark: a bar and a play triangle ( |> ) — "start / boot from media".
+       Light from above. -->
   <defs>
-    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#4a90e8"/>
-      <stop offset="1" stop-color="#1a5fb4"/>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3584e4"/>
+      <stop offset="1" stop-color="#813d9c"/>
     </linearGradient>
   </defs>
 
   <!-- Base tile (fills the canvas for proper visual weight) -->
-  <rect x="8" y="10" width="112" height="112" rx="27" fill="#164f96"/>
+  <rect x="8" y="10" width="112" height="112" rx="27" fill="#4a2168"/>
   <rect x="8" y="8" width="112" height="112" rx="27" fill="url(#tile)"/>
   <!-- top highlight (light from above) -->
-  <rect x="18" y="16" width="92" height="44" rx="20" fill="#ffffff" opacity="0.10"/>
+  <rect x="18" y="16" width="92" height="42" rx="20" fill="#ffffff" opacity="0.12"/>
 
-  <!-- Bold eject / boot mark -->
-  <g fill="#ffffff" stroke="#ffffff" stroke-width="6" stroke-linejoin="round">
-    <path d="M64 34 L91 71 H37 Z"/>
-  </g>
-  <rect x="37" y="82" width="54" height="13" rx="5" fill="#ffffff"/>
+  <!-- |>  play / boot mark -->
+  <rect x="37" y="43" width="14" height="42" rx="7" fill="#ffffff"/>
+  <path d="M60 43 L94 64 L60 85 Z" fill="#ffffff" stroke="#ffffff"
+        stroke-width="8" stroke-linejoin="round"/>
 </svg>
