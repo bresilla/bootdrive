@@ -8,14 +8,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use bootdrive_common::{DriveState, ImageMode, StateInfo};
+use bootdrive_common::{DriveState, ImageMode};
 use gtk4 as gtk;
 use libadwaita as adw;
 
 use adw::prelude::*;
 
-use crate::daemon_proxy::{headline, DaemonClient, DaemonCommand, DaemonUpdate, UnreachableReason};
-use crate::image_selection::{human_size, in_flatpak, resolve_host_path, Selection};
+use crate::image_selection::{human_size, resolve_host_path, Selection};
+use crate::usb_moded::{DaemonClient, DaemonCommand, DaemonUpdate, UnreachableReason};
 
 /// Everything the callbacks need to share.
 struct Ui {
@@ -36,7 +36,7 @@ struct Ui {
 
     client: DaemonClient,
     selection: RefCell<Option<Selection>>,
-    state: RefCell<StateInfo>,
+    state: RefCell<DriveState>,
     // Whether a call is in flight (disables inputs).
     busy: RefCell<bool>,
 }
@@ -157,7 +157,7 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         setup_status,
         client: DaemonClient::spawn(),
         selection: RefCell::new(None),
-        state: RefCell::new(StateInfo::default()),
+        state: RefCell::new(DriveState::Unavailable),
         busy: RefCell::new(false),
     });
 
@@ -196,7 +196,7 @@ fn wire_callbacks(ui: &Rc<Ui>) {
         let ui = ui.clone();
         let button = ui.primary_button.clone();
         button.connect_clicked(move |_| {
-            let state = ui.state.borrow().state;
+            let state = *ui.state.borrow();
             match state {
                 DriveState::Active => confirm_and_eject(&ui),
                 DriveState::Idle | DriveState::Error => activate(&ui),
@@ -258,7 +258,6 @@ fn activate(ui: &Rc<Ui>) {
     ui.set_busy(true);
     let cmd = DaemonCommand::Activate {
         path: selection.host_path.to_string_lossy().into_owned(),
-        display_name: selection.display_name.clone(),
         mode: selection.default_mode,
     };
     send(ui, cmd);
@@ -300,14 +299,14 @@ fn listen_for_updates(ui: &Rc<Ui>) {
     glib::spawn_future_local(async move {
         while let Ok(update) = rx.recv().await {
             match update {
-                DaemonUpdate::State(info) => {
-                    *ui.state.borrow_mut() = info;
+                DaemonUpdate::State(state) => {
+                    *ui.state.borrow_mut() = state;
                     ui.set_busy(false);
                     ui.refresh();
                 }
-                DaemonUpdate::Error { code, message } => {
+                DaemonUpdate::Error { message } => {
                     ui.set_busy(false);
-                    ui.toast(&format!("{message} ({code})"));
+                    ui.toast(&message);
                 }
                 DaemonUpdate::Unreachable(reason) => {
                     ui.set_busy(false);
@@ -331,18 +330,18 @@ impl Ui {
     fn show_setup(&self, reason: &UnreachableReason) {
         let (title, desc) = match reason {
             UnreachableReason::NotRunning => (
-                "Helper not running",
-                "The BootDrive system helper (bootdrived) is not installed or not \
-                 started. Install the postmarketOS package and start the service.",
+                "usb-signaller not running",
+                "BootDrive could not reach usb-signaller on the system bus. Make sure \
+                 postmarketOS's usb-signaller service is running.",
             ),
-            UnreachableReason::PermissionDenied => (
-                "Permission needed",
-                "You are not allowed to talk to the BootDrive helper. Add your user \
-                 to the 'bootdrive' group and try again.",
+            UnreachableReason::NoMassStorage => (
+                "Update needed",
+                "Your usb-signaller does not support mass-storage mode yet. Install \
+                 the patched usb-signaller build to enable BootDrive.",
             ),
             UnreachableReason::Other(_) => (
-                "Helper unavailable",
-                "BootDrive could not reach its system helper over D-Bus.",
+                "USB service unavailable",
+                "BootDrive could not talk to usb-signaller over D-Bus.",
             ),
         };
         self.setup_status.set_title(title);
@@ -352,36 +351,39 @@ impl Ui {
 
     /// Recompute every label and control from the current state + selection.
     fn refresh(&self) {
-        let info = self.state.borrow().clone();
-
-        if info.state == DriveState::Unavailable && !in_flatpak() {
-            // On a dev box with no daemon this is normal; still show setup.
-        }
+        let state = *self.state.borrow();
 
         self.stack.set_visible_child_name("main");
-        self.status_title.set_text(headline(info.state));
-        self.status_detail.set_text(&status_detail_text(&info));
+        self.status_title.set_text(state.headline());
+        let sel = self.selection.borrow();
+        self.status_detail
+            .set_text(&status_detail_text(state, sel.as_ref()));
 
         // Selected image display.
-        if info.state == DriveState::Active {
-            self.image_row.set_title(&info.display_name);
-            self.image_row
-                .set_subtitle(&format!("{} · Read-only", info.mode.label()));
+        if state == DriveState::Active {
+            if let Some(s) = sel.as_ref() {
+                self.image_row.set_title(&s.display_name);
+                self.image_row
+                    .set_subtitle(&format!("{} · Read-only", s.default_mode.label()));
+            } else {
+                self.image_row.set_title("Exposed image");
+                self.image_row.set_subtitle("Read-only");
+            }
             self.mode_row.set_visible(false);
             self.change_button.set_visible(false);
-        } else if let Some(sel) = self.selection.borrow().as_ref() {
-            self.image_row.set_title(&sel.display_name);
-            let size = sel
+        } else if let Some(s) = sel.as_ref() {
+            self.image_row.set_title(&s.display_name);
+            let size = s
                 .size
                 .map(human_size)
                 .unwrap_or_else(|| "unknown size".to_string());
             self.image_row
-                .set_subtitle(&format!("{} · {}", size, sel.default_mode.label()));
+                .set_subtitle(&format!("{} · {}", size, s.default_mode.label()));
             self.change_button.set_visible(true);
-            self.mode_row.set_visible(sel.hybrid);
-            if sel.hybrid {
+            self.mode_row.set_visible(s.hybrid);
+            if s.hybrid {
                 self.mode_row
-                    .set_selected(if sel.default_mode == ImageMode::Cdrom {
+                    .set_selected(if s.default_mode == ImageMode::Cdrom {
                         0
                     } else {
                         1
@@ -394,24 +396,24 @@ impl Ui {
             self.change_button.set_visible(true);
             self.mode_row.set_visible(false);
         }
+        drop(sel);
 
         self.refresh_controls();
     }
 
     /// Update just the interactive controls (button label + sensitivity).
     fn refresh_controls(&self) {
-        let info = self.state.borrow().clone();
+        let state = *self.state.borrow();
         let busy = *self.busy.borrow();
         let has_selection = self.selection.borrow().is_some();
 
-        let transitioning = matches!(info.state, DriveState::Preparing | DriveState::Ejecting);
+        let transitioning = matches!(state, DriveState::Preparing | DriveState::Ejecting);
         let inputs_enabled = !busy && !transitioning;
 
-        // Plan: disable selection while preparing/ejecting.
         self.change_button.set_sensitive(inputs_enabled);
         self.mode_row.set_sensitive(inputs_enabled);
 
-        match info.state {
+        match state {
             DriveState::Active => {
                 self.primary_button.set_label("Eject");
                 self.primary_button
@@ -442,28 +444,18 @@ impl Ui {
 }
 
 /// The detail line under the big status headline.
-fn status_detail_text(info: &StateInfo) -> String {
-    match info.state {
+fn status_detail_text(state: DriveState, sel: Option<&Selection>) -> String {
+    match state {
         DriveState::Unavailable => {
-            if info.last_error.is_empty() {
-                "BootDrive is not available on this device.".to_string()
-            } else {
-                info.last_error.clone()
-            }
+            "BootDrive can't reach usb-signaller with mass-storage support.".to_string()
         }
         DriveState::Idle => "Select an image and expose it over USB.".to_string(),
         DriveState::Preparing => "Setting up the USB gadget…".to_string(),
-        DriveState::Active => match info.mode {
-            ImageMode::Cdrom => "Connected as a bootable CD-ROM.".to_string(),
-            ImageMode::Disk => "Connected as a bootable USB disk.".to_string(),
+        DriveState::Active => match sel.map(|s| s.default_mode) {
+            Some(ImageMode::Disk) => "Connected as a bootable USB disk.".to_string(),
+            _ => "Connected as a bootable CD-ROM.".to_string(),
         },
         DriveState::Ejecting => "Returning to normal USB behaviour…".to_string(),
-        DriveState::Error => {
-            if info.last_error.is_empty() {
-                "Something went wrong.".to_string()
-            } else {
-                info.last_error.clone()
-            }
-        }
+        DriveState::Error => "Something went wrong.".to_string(),
     }
 }

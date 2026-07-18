@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "BootDrive command-line frontend (talks to bootdrived over system D-Bus)"
+description = "BootDrive command-line frontend (drives usb-signaller's com.meego.usb_moded)"
 
 [[bin]]
 name = "bootdrive"
@@ -14,11 +14,7 @@ path = "src/main.rs"
 [dependencies]
 bootdrive-common.workspace = true
 zbus.workspace = true
-zvariant.workspace = true
-serde.workspace = true
 tokio.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 futures-util = "0.3"

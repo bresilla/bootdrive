@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Cross-compile the BootDrive backend + CLI for postmarketOS (aarch64), static.
+# Cross-compile the BootDrive CLI for postmarketOS (static aarch64-musl).
 #
-# Neither binary depends on GTK, so both cross-compile cleanly to
-# aarch64-unknown-linux-musl from an x86_64 workstation. The results are static
-# binaries that run on the phone with no toolchain or glibc installed — scp
-# bootdrived to /usr/libexec/bootdrived and bootdrive to /usr/bin/bootdrive.
+# The CLI has no GTK/C dependency, so it cross-compiles cleanly to a static
+# aarch64-unknown-linux-musl binary that runs on the phone with no toolchain —
+# scp it to /usr/bin/bootdrive. (The GUI ships as a Flatpak; usb-signaller is
+# built with tools/build-usb-signaller-aarch64.sh.)
 #
 # Requires Nix (for rustup + the aarch64 musl cross toolchain). Run from the
 # repository root.
@@ -28,13 +28,8 @@ rustup target add '"$TARGET"' >/dev/null 2>&1 || true
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-unknown-linux-musl-cc
 export CC_aarch64_unknown_linux_musl=aarch64-unknown-linux-musl-cc
 
-cargo build --release --target '"$TARGET"' \
-    -p bootdrived --bin bootdrived --bin probe \
-    -p bootdrive-cli --bin bootdrive
+cargo build --release --target '"$TARGET"' -p bootdrive-cli --bin bootdrive
 
 echo
-echo "Built:"
-echo "  target/'"$TARGET"'/release/bootdrived"
-echo "  target/'"$TARGET"'/release/bootdrive"
-echo "  target/'"$TARGET"'/release/probe"
+echo "Built: target/'"$TARGET"'/release/bootdrive"
 '

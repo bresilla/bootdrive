@@ -51,11 +51,6 @@ fn extension_of(path: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// Whether we appear to be running inside a Flatpak sandbox.
-pub fn in_flatpak() -> bool {
-    Path::new("/.flatpak-info").exists()
-}
-
 /// Resolve a possibly-sandboxed path to a host path.
 ///
 /// - A normal absolute path outside the portal is returned as-is.

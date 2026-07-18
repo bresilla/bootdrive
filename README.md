@@ -7,36 +7,39 @@ as a bootable USB CD-ROM or USB disk.
 ## Architecture
 
 A Flatpak app cannot be root (verified — the sandbox blocks configfs writes), so
-BootDrive is one privileged backend with two thin frontends:
+the privileged USB-gadget work is done by postmarketOS's **`usb-signaller`**,
+which already runs as root and owns the `com.meego.usb_moded` D-Bus interface.
+BootDrive adds a **`mass_storage_mode`** to usb-signaller (see
+[`contrib/usb-signaller-mass-storage/`](contrib/usb-signaller-mass-storage/) and
+the fork at <https://codeberg.org/bresilla/usb-signaller>), then ships only two
+thin frontends that drive it:
 
-- **`bootdrived`** — a native postmarketOS **service** running as root. It owns
-  all the logic: the USB mass-storage gadget via configfs (using
-  [`usb-gadget`](https://github.com/surban/usb-gadget)), image validation, the
-  UDC handoff with `usb-signaller`, and crash recovery. It exposes the **system**
-  D-Bus interface `net.bresilla.BootDrive1`.
-- **`bootdrive`** — a native CLI frontend (`expose`/`eject`/`status`/`watch`).
+- **`bootdrive`** — a native CLI (`expose`/`eject`/`status`/`watch`).
 - **`net.bresilla.BootDrive`** — a sandboxed Flatpak GTK4/libadwaita GUI.
 
-Both frontends are thin clients; an exposed image stays up until something
-ejects it (closing the GUI does not tear it down).
+To expose an image a frontend calls `set_config("image=…,cdrom=…")` then
+`set_mode("mass_storage_mode")`; eject is `set_mode("developer_mode")`.
+usb-signaller's policy already lets any user call these, so there is **no
+BootDrive daemon, group or PolicyKit action** — install the Flatpak (plus a
+usb-signaller with the patch) and go.
 
 ```
-CLI / GUI (Flatpak)  ──system D-Bus──▶  bootdrived (root)  ──configfs──▶  UDC
+CLI / GUI (Flatpak)  ──system D-Bus (com.meego.usb_moded)──▶  usb-signaller (root)  ──▶  UDC
 ```
 
-See [PLAN.md](PLAN.md) for the full design.
+See [PLAN.md](PLAN.md) for the full design and [FLATHUB.md](FLATHUB.md) for CI /
+Flathub.
 
 ## Workspace layout
 
 | Crate | Purpose |
 | --- | --- |
-| `crates/bootdrive-common` | Shared D-Bus contract, state model and errors |
-| `crates/bootdrived` | Privileged backend service + `probe` diagnostic binary |
+| `crates/bootdrive-common` | Shared exposure mode, state, and `com.meego.usb_moded` constants |
 | `crates/bootdrive-cli` | Native CLI frontend (`bootdrive`) |
 | `crates/bootdrive-gui` | GTK4/libadwaita Flatpak frontend |
 
-The backend and CLI keep `usb-gadget`/GTK out of each other's dependency trees;
-the frontends share only `bootdrive-common`.
+The `mass_storage_mode` patch to usb-signaller lives in
+`contrib/usb-signaller-mass-storage/`.
 
 ## Development
 
@@ -46,41 +49,40 @@ PolicyKit, Flatpak, AppStream/desktop validators, `just`):
 ```sh
 nix develop
 just check          # fmt + clippy + tests
-just run-daemon     # run the backend (needs root for real gadget access)
-just cli status     # drive it from the CLI
+just cli status     # drive usb-signaller from the CLI
 just run-gui        # run the GUI outside Flatpak
 ```
 
-The backend's state machine, path validation, authorization, rollback and
-recovery are all unit-tested against mock backends, so `just check` passes on a
-workstation with no USB device controller.
+The CLI and GUI talk to `com.meego.usb_moded` on the system bus, so they need a
+running (patched) usb-signaller to do anything.
 
-For aarch64: `just cross-backend` builds static `bootdrived`/`bootdrive` binaries
-you can copy straight onto the phone.
+For aarch64: `just cross-cli` builds a static `bootdrive` CLI, and
+`just cross-usb-signaller` builds the patched usb-signaller — both copyable
+straight onto the phone.
 
-### Hardware proof
+## The privileged side: patched usb-signaller
 
-On the target device, validate the whole handoff before anything else:
+The `mass_storage_mode` is a change to usb-signaller itself (Rust, on Codeberg):
 
-```sh
-sudo -E cargo run --package bootdrived --bin probe -- /path/to/image.iso
-```
+- Patch + notes: `contrib/usb-signaller-mass-storage/`.
+- Fork with the patch applied: <https://codeberg.org/bresilla/usb-signaller>
+  (branch `mass-storage-mode`), proposed upstream to
+  <https://codeberg.org/DylanVanAssche/usb-signaller>.
 
-It releases `usb-signaller`, exposes the ISO read-only as a CD-ROM, waits for
-Ctrl-C, then cleans up and restores normal USB behaviour.
+Until it lands upstream, run the patched build on the phone (replace
+`/usr/bin/usb-signaller` and restart the service).
 
 ## Packaging
 
-- **Flatpak (GUI):** `just flatpak-sources` then `just flatpak-build`. The build
-  is fully offline using `data/cargo-sources.json`.
-- **postmarketOS (daemon):** see `packaging/alpine/APKBUILD`. Installs the
-  daemon, OpenRC service, system D-Bus policy and PolicyKit action.
+- **Flatpak (GUI):** built for x86_64 + aarch64 by CI (`.github/workflows/flatpak.yml`)
+  — see [FLATHUB.md](FLATHUB.md). Local: `just flatpak-sources` then
+  `just flatpak-build`. Fully offline via `data/cargo-sources.json`.
+- **CLI:** static aarch64 binary attached to GitHub releases, or `just cross-cli`.
 
 ## Status
 
-Milestones 1–3 (workspace, native daemon, GUI) are implemented and tested on the
-workstation. Milestones 0/4/5 (on-device proof, Flatpak build, apk install) and
-the Fairphone 6 integration tests require the target hardware.
+The CLI, GUI, and the usb-signaller `mass_storage_mode` patch build and are
+being validated on a Fairphone 6 running postmarketOS.
 
 ## License
 

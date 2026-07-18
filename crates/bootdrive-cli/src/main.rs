@@ -1,34 +1,32 @@
 //! `bootdrive` — the command-line frontend.
 //!
-//! A thin native client of the `net.bresilla.BootDrive1` system-D-Bus service.
-//! Handy for headless/SSH use on the phone and for scripting. It holds no
-//! privileges itself; the backend does all the work.
+//! Drives postmarketOS's `usb-signaller` directly over `com.meego.usb_moded`
+//! (with the `mass_storage_mode` our patch adds). No BootDrive daemon involved.
 
-use anyhow::{Context, Result};
-use bootdrive_common::{DriveState, ImageMode, StateInfo};
+use anyhow::{bail, Context, Result};
+use bootdrive_common::{ImageMode, MODE_MASS_STORAGE, MODE_NORMAL};
 use clap::{Parser, Subcommand};
 use zbus::proxy;
 
 #[proxy(
-    interface = "net.bresilla.BootDrive1",
-    default_service = "net.bresilla.BootDrive1",
-    default_path = "/net/bresilla/BootDrive1"
+    interface = "com.meego.usb_moded",
+    default_service = "com.meego.usb_moded",
+    default_path = "/com/meego/usb_moded"
 )]
-trait BootDrive {
-    fn get_state(&self) -> zbus::Result<StateInfo>;
-    fn activate(&self, image_path: &str, display_name: &str, mode: &str) -> zbus::Result<()>;
-    fn deactivate(&self) -> zbus::Result<()>;
+trait UsbModed {
+    fn get_modes(&self) -> zbus::Result<String>;
+    fn mode_request(&self) -> zbus::Result<String>;
+    fn set_mode(&self, mode: &str) -> zbus::Result<String>;
+    fn set_config(&self, config: &str) -> zbus::Result<String>;
 
     #[zbus(signal)]
-    fn state_changed(&self, info: StateInfo) -> zbus::Result<()>;
-    #[zbus(signal)]
-    fn error_occurred(&self, code: &str, message: &str) -> zbus::Result<()>;
+    fn sig_usb_event_ind(&self, event: String) -> zbus::Result<()>;
 }
 
 #[derive(Parser)]
 #[command(
     name = "bootdrive",
-    about = "Expose a disk image as a bootable USB drive",
+    about = "Expose a disk image as a bootable USB drive (via usb-signaller)",
     version
 )]
 struct Cli {
@@ -38,9 +36,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Print the current USB state.
+    /// Print the current USB mode.
     Status,
-    /// Expose an image over USB.
+    /// Expose an image over USB as mass storage.
     Expose {
         /// Path to the .iso/.img/.raw image.
         image: std::path::PathBuf,
@@ -50,51 +48,45 @@ enum Command {
         /// Force USB disk mode.
         #[arg(long)]
         disk: bool,
-        /// Display name (defaults to the file name).
-        #[arg(long)]
-        name: Option<String>,
     },
-    /// Eject the current image.
+    /// Eject (return to normal USB mode).
     Eject,
-    /// Follow state and error events until interrupted.
+    /// Follow USB mode changes until interrupted.
     Watch,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
-        )
-        .init();
-
     let cli = Cli::parse();
     let conn = zbus::Connection::system()
         .await
         .context("cannot connect to the system bus")?;
-    let proxy = BootDriveProxy::new(&conn)
+    let proxy = UsbModedProxy::new(&conn)
         .await
-        .context("bootdrived is not reachable (is the service installed and running?)")?;
+        .context("usb-signaller (com.meego.usb_moded) is not reachable")?;
 
     match cli.command {
         Command::Status => {
-            let state = proxy.get_state().await.context("could not read state")?;
-            print_state(&state);
+            let mode = proxy.mode_request().await.context("mode_request failed")?;
+            let modes = proxy.get_modes().await.unwrap_or_default();
+            let supported = modes.split(',').any(|m| m == MODE_MASS_STORAGE);
+            println!("Mode:  {mode}");
+            println!(
+                "Mass-storage support: {}",
+                if supported {
+                    "yes"
+                } else {
+                    "NO — install the patched usb-signaller"
+                }
+            );
         }
-        Command::Expose {
-            image,
-            cdrom,
-            disk,
-            name,
-        } => {
+        Command::Expose { image, cdrom, disk } => {
+            let modes = proxy.get_modes().await.unwrap_or_default();
+            if !modes.split(',').any(|m| m == MODE_MASS_STORAGE) {
+                bail!("usb-signaller has no '{MODE_MASS_STORAGE}' — install the patched build");
+            }
             let path = std::fs::canonicalize(&image)
                 .with_context(|| format!("no such file: {}", image.display()))?;
-            let display_name = name.unwrap_or_else(|| {
-                path.file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "image".to_string())
-            });
             let mode = if cdrom {
                 ImageMode::Cdrom
             } else if disk {
@@ -106,15 +98,31 @@ async fn main() -> Result<()> {
                     .unwrap_or_default();
                 ImageMode::default_for_extension(&ext)
             };
+            let config = format!(
+                "image={},cdrom={}",
+                path.to_string_lossy(),
+                mode.cdrom_flag()
+            );
             proxy
-                .activate(&path.to_string_lossy(), &display_name, mode.as_wire())
+                .set_config(&config)
                 .await
-                .map_err(explain)?;
-            println!("Exposing {display_name} as {}.", mode.label());
+                .context("set_config failed")?;
+            let result = proxy
+                .set_mode(MODE_MASS_STORAGE)
+                .await
+                .context("set_mode failed")?;
+            if result == MODE_MASS_STORAGE {
+                println!("Exposing {} as {}.", path.display(), mode.label());
+            } else {
+                bail!("usb-signaller stayed in '{result}' — check its logs");
+            }
         }
         Command::Eject => {
-            proxy.deactivate().await.map_err(explain)?;
-            println!("Ejected.");
+            proxy
+                .set_mode(MODE_NORMAL)
+                .await
+                .context("set_mode failed")?;
+            println!("Ejected (back to {MODE_NORMAL}).");
         }
         Command::Watch => watch(&proxy).await?,
     }
@@ -122,61 +130,16 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Turn a coded method error ("code: message") into a readable message.
-fn explain(err: zbus::Error) -> anyhow::Error {
-    if let zbus::Error::MethodError(_, Some(text), _) = &err {
-        anyhow::anyhow!("{text}")
-    } else {
-        anyhow::anyhow!("{err}")
-    }
-}
-
-fn print_state(state: &StateInfo) {
-    let headline = match state.state {
-        DriveState::Unavailable => "unavailable",
-        DriveState::Idle => "ready",
-        DriveState::Preparing => "preparing",
-        DriveState::Active => "active",
-        DriveState::Ejecting => "ejecting",
-        DriveState::Error => "error",
-    };
-    println!("State:  {headline}");
-    if !state.display_name.is_empty() {
-        println!("Image:  {} ({})", state.display_name, state.mode.label());
-    }
-    if !state.udc.is_empty() {
-        println!("UDC:    {}", state.udc);
-    }
-    if !state.last_error.is_empty() {
-        println!("Error:  {}", state.last_error);
-    }
-}
-
-async fn watch(proxy: &BootDriveProxy<'_>) -> Result<()> {
+async fn watch(proxy: &UsbModedProxy<'_>) -> Result<()> {
     use futures_util::StreamExt;
-
-    if let Ok(state) = proxy.get_state().await {
-        print_state(&state);
-        println!("---");
+    if let Ok(mode) = proxy.mode_request().await {
+        println!("Mode: {mode}");
     }
-
-    let mut states = proxy.receive_state_changed().await?;
-    let mut errors = proxy.receive_error_occurred().await?;
-    println!("Watching for changes (Ctrl-C to stop)…");
-    loop {
-        tokio::select! {
-            Some(sig) = states.next() => {
-                if let Ok(args) = sig.args() {
-                    print_state(&args.info);
-                    println!("---");
-                }
-            }
-            Some(sig) = errors.next() => {
-                if let Ok(args) = sig.args() {
-                    eprintln!("error: {} ({})", args.message, args.code);
-                }
-            }
-            else => break,
+    let mut events = proxy.receive_sig_usb_event_ind().await?;
+    println!("Watching USB mode changes (Ctrl-C to stop)…");
+    while let Some(sig) = events.next().await {
+        if let Ok(args) = sig.args() {
+            println!("event: {}", args.event);
         }
     }
     Ok(())

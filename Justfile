@@ -15,35 +15,26 @@ check:
 fmt:
     cargo fmt --all
 
-# Run the backend service (needs root for real USB gadget access).
-run-daemon:
-    sudo -E cargo run --package bootdrived --bin bootdrived
-
-# Run the CLI frontend, e.g. `just cli status` or `just cli expose x.iso`.
+# Run the CLI, e.g. `just cli status` or `just cli expose x.iso`.
+# Talks to usb-signaller's com.meego.usb_moded on the system bus.
 cli *args:
     cargo run --package bootdrive-cli --bin bootdrive -- {{args}}
 
-# Run the GUI outside Flatpak (talks to the running backend over system D-Bus).
+# Run the GUI outside Flatpak (talks to usb-signaller over system D-Bus).
 run-gui:
     cargo run --package bootdrive-gui
 
-# Cross-compile the backend + CLI for postmarketOS (static aarch64-musl).
-cross-backend:
+# Cross-compile the CLI for postmarketOS (static aarch64-musl).
+cross-cli:
     ./tools/build-helper-aarch64.sh
 
-# Build, copy, and install the backend on the phone (prompts for sudo there).
-# Usage: just deploy            (default host)
-#        just deploy 100.x.x.x  (explicit host)
-deploy host="100.68.168.31":
-    ./tools/deploy-phone.sh {{host}}
+# Cross-compile the patched usb-signaller for postmarketOS (static aarch64-musl).
+cross-usb-signaller:
+    ./tools/build-usb-signaller-aarch64.sh
 
 # Install/update the GUI Flatpak on the phone from the latest CI build (no sudo).
 install-phone host="100.68.168.31":
     ./tools/install-phone.sh {{host}}
-
-# Low-level hardware proof: expose one ISO, then Ctrl-C to clean up.
-probe image:
-    sudo -E cargo run --package bootdrived --bin probe -- {{image}}
 
 # Regenerate the offline Cargo sources for the Flatpak build.
 flatpak-sources:

@@ -1,15 +1,15 @@
-//! Shared types for BootDrive.
+//! Shared types for the BootDrive frontends.
 //!
-//! This crate is depended on by both the privileged daemon (`bootdrived`) and
-//! the sandboxed GUI (`bootdrive-gui`). It defines the D-Bus contract, the
-//! observable state model and the error type, so both sides agree on the wire
-//! format without either pulling in the other's heavy dependencies (GTK on one
-//! side, `usb-gadget`/configfs on the other).
+//! BootDrive has **no daemon of its own**. The Flatpak GUI and the CLI both
+//! drive postmarketOS's `usb-signaller` directly over its
+//! `com.meego.usb_moded` system-D-Bus interface (with the `mass_storage_mode`
+//! added by our patch). This crate holds the small pieces both frontends
+//! share: the exposure mode, a display state, and the D-Bus contract constants.
 
-pub mod error;
 pub mod protocol;
 pub mod state;
 
-pub use error::{BootDriveError, ErrorCode};
-pub use protocol::{DBUS_INTERFACE, DBUS_OBJECT_PATH, DBUS_SERVICE_NAME, DISPLAY_NAME};
-pub use state::{DriveState, ImageMode, StateInfo};
+pub use protocol::{
+    DISPLAY_NAME, MODED_INTERFACE, MODED_PATH, MODED_SERVICE, MODE_MASS_STORAGE, MODE_NORMAL,
+};
+pub use state::{DriveState, ImageMode};

@@ -1,9 +1,9 @@
 name: release
 
-# On a GitHub release, build the privileged backend + CLI as static
-# aarch64-musl binaries (they run as-is on postmarketOS/Alpine — no toolchain,
-# no glibc) and attach them. The Flatpak GUI is built separately by the
-# `flatpak` workflow / Flathub; this covers the native pmOS side.
+# On a GitHub release, build the CLI as a static aarch64-musl binary (runs as-is
+# on postmarketOS/Alpine — no toolchain, no glibc) and attach it. The GUI ships
+# as a Flatpak (see the `flatpak` workflow / Flathub); the privileged part is
+# usb-signaller (built from its own repo).
 
 on:
   release:
@@ -13,8 +13,8 @@ permissions:
   contents: write
 
 jobs:
-  backend:
-    name: backend + CLI (aarch64-musl)
+  cli:
+    name: CLI (aarch64-musl)
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
@@ -25,19 +25,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools
-      - name: Build static binaries
+      - name: Build static CLI
         env:
           RUSTFLAGS: "-C target-feature=+crt-static"
         run: |
           cargo build --release --target aarch64-unknown-linux-musl \
-            --package bootdrived --bin bootdrived --bin probe \
             --package bootdrive-cli --bin bootdrive
       - name: Package
         run: |
           cd target/aarch64-unknown-linux-musl/release
-          tar -czf "$GITHUB_WORKSPACE/bootdrive-backend-aarch64-musl.tar.gz" \
-            bootdrived bootdrive probe
+          tar -czf "$GITHUB_WORKSPACE/bootdrive-cli-aarch64-musl.tar.gz" bootdrive
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
-          files: bootdrive-backend-aarch64-musl.tar.gz
+          files: bootdrive-cli-aarch64-musl.tar.gz

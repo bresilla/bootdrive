@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "crates/bootdrive-common",
-    "crates/bootdrived",
     "crates/bootdrive-cli",
     "crates/bootdrive-gui",
 ]

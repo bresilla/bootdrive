@@ -5,8 +5,8 @@
 //! itself and does nothing to configfs.
 
 mod application;
-mod daemon_proxy;
 mod image_selection;
+mod usb_moded;
 mod window;
 
 use libadwaita as adw;

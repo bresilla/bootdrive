@@ -22,11 +22,11 @@ finish-args:
   - --socket=fallback-x11
   - --device=dri
   # Read-only host access so the file chooser returns a REAL host path (not a
-  # document-portal FUSE path). The root backend runs outside the sandbox and
-  # can only open real paths; it never sees the portal mount.
+  # document-portal FUSE path). usb-signaller runs as root outside the sandbox
+  # and can only open real paths; it never sees the portal mount.
   - --filesystem=host:ro
-  # Talk to the system backend.
-  - --system-talk-name=net.bresilla.BootDrive1
+  # Drive usb-signaller directly (its policy already permits set_mode/set_config).
+  - --system-talk-name=com.meego.usb_moded
 
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin
