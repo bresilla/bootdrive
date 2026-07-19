@@ -23,12 +23,14 @@
 
   <launchable type="desktop-id">net.bresilla.BootDrive.desktop</launchable>
 
-  <requires>
-    <control>touch</control>
-  </requires>
   <recommends>
+    <control>touch</control>
     <display_length compare="ge">360</display_length>
   </recommends>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
 
   <categories>
     <category>System</category>
@@ -37,8 +39,29 @@
 
   <content_rating type="oars-1.1"/>
 
+  <branding>
+    <color type="primary" scheme_preference="light">#c3e5ea</color>
+    <color type="primary" scheme_preference="dark">#0b6f7d</color>
+  </branding>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/bresilla/bootdrive/main/data/screenshots/mount.png</image>
+      <caption>Connected as a bootable USB drive</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/bresilla/bootdrive/main/data/screenshots/choose.png</image>
+      <caption>Pick an image from your library</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/bresilla/bootdrive/main/data/screenshots/images.png</image>
+      <caption>Manage your image library</caption>
+    </screenshot>
+  </screenshots>
+
   <url type="homepage">https://github.com/bresilla/bootdrive</url>
   <url type="bugtracker">https://github.com/bresilla/bootdrive/issues</url>
+  <url type="vcs-browser">https://github.com/bresilla/bootdrive</url>
 
   <developer id="net.bresilla">
     <name>Trim Bresilla</name>
