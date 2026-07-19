@@ -21,11 +21,11 @@ finish-args:
   - --socket=wayland
   - --socket=fallback-x11
   - --device=dri
-  # Read-only host access so the file chooser returns a REAL host path (not a
-  # document-portal FUSE path). usb-signaller runs as root outside the sandbox
-  # and can only open real paths; it never sees the portal mount.
-  - --filesystem=host:ro
-  # Drive usb-signaller directly (its policy already permits set_mode/set_config).
+  # No host filesystem access: images are picked through the file chooser
+  # portal and copied into the app's own data dir. usb-signaller (root) reads
+  # that copy at ~/.var/app/net.bresilla.BootDrive/data/…, a real path it can
+  # open, so it never needs the portal mount. (Same model as Impression, which
+  # reads via the portal and drives UDisks2 over the system bus.)
   - --system-talk-name=com.meego.usb_moded
 
 build-options:
