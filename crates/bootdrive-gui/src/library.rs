@@ -127,6 +127,81 @@ pub fn import<F: FnMut(Progress)>(
     Ok(ImageEntry::new(dest, display_name, Some(total)))
 }
 
+/// Download `url` into the images dir, reporting progress and honouring
+/// `cancel`. Works like [`import`] but the bytes come off the network. On
+/// cancel or error the partial file is removed.
+pub fn download<F: FnMut(Progress)>(
+    url: &str,
+    mut progress: F,
+    cancel: &AtomicBool,
+) -> std::io::Result<ImageEntry> {
+    let dir = images_dir();
+    std::fs::create_dir_all(&dir)?;
+
+    let display_name = url
+        .rsplit('/')
+        .find(|s| !s.is_empty())
+        .map(percent_decode)
+        .unwrap_or_else(|| "image.iso".to_string());
+    let dest = unique_dest(&dir, &display_name);
+
+    let resp = ureq::get(url)
+        .call()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    let total = resp
+        .header("Content-Length")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
+
+    let mut reader = resp.into_reader();
+    let mut dst = File::create(&dest)?;
+    let mut buf = vec![0u8; 4 * 1024 * 1024];
+    let mut copied = 0u64;
+    progress((0, total));
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            drop(dst);
+            let _ = std::fs::remove_file(&dest);
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "cancelled",
+            ));
+        }
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        if let Err(e) = dst.write_all(&buf[..n]) {
+            let _ = std::fs::remove_file(&dest);
+            return Err(e);
+        }
+        copied += n as u64;
+        progress((copied, total));
+    }
+    dst.flush()?;
+    let size = std::fs::metadata(&dest).map(|m| m.len()).ok();
+    Ok(ImageEntry::new(dest, display_name, size))
+}
+
+/// Decode `%20`-style escapes in a URL's last path segment for the filename.
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(b) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// Pick a non-colliding destination path for `name` in `dir`.
 fn unique_dest(dir: &Path, name: &str) -> PathBuf {
     let candidate = dir.join(name);

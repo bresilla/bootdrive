@@ -7,7 +7,7 @@
 //! files; choosing what to expose happens in Mount. State comes from
 //! usb-signaller via [`DaemonClient`].
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,7 +20,8 @@ use libadwaita as adw;
 
 use adw::prelude::*;
 
-use crate::library::{human_size, import, ImageEntry, Library};
+use crate::catalog;
+use crate::library::{download, human_size, import, ImageEntry, Library};
 use crate::usb_moded::{DaemonClient, DaemonCommand, DaemonUpdate, UnreachableReason};
 
 /// A little accent stylesheet so the app isn't all grey.
@@ -73,6 +74,11 @@ struct Ui {
     images_list: gtk::ListBox,
     images_group: adw::PreferencesGroup,
 
+    // Download view.
+    download_stack: gtk::Stack,
+    download_list: gtk::ListBox,
+    catalog_loaded: RefCell<bool>,
+
     client: DaemonClient,
     library: RefCell<Library>,
     active: RefCell<Option<usize>>,
@@ -81,6 +87,7 @@ struct Ui {
     available: RefCell<bool>,
 }
 
+const TAB_DOWNLOAD: &str = "download";
 const TAB_MOUNT: &str = "mount";
 const TAB_IMAGES: &str = "images";
 
@@ -116,6 +123,7 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         .build();
     nav_list.append(&nav_row("Mount", "drive-removable-media-symbolic"));
     nav_list.append(&nav_row("Images", "media-optical-symbolic"));
+    nav_list.append(&nav_row("Download", "folder-download-symbolic"));
 
     let sidebar_toolbar = adw::ToolbarView::new();
     sidebar_toolbar.add_top_bar(&sidebar_header);
@@ -145,6 +153,8 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     view_stack.add_named(&mount_page, Some(TAB_MOUNT));
     let (images_page, images_list, images_group) = images_page(&add_button);
     view_stack.add_named(&images_page, Some(TAB_IMAGES));
+    let (download_page, download_stack, download_list) = download_page();
+    view_stack.add_named(&download_page, Some(TAB_DOWNLOAD));
     view_stack.set_visible_child_name(TAB_MOUNT);
 
     let content_toolbar = adw::ToolbarView::new();
@@ -189,6 +199,9 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         setup_status: mount_widgets.setup_status,
         images_list,
         images_group,
+        download_stack,
+        download_list,
+        catalog_loaded: RefCell::new(false),
         client: DaemonClient::spawn(),
         library: RefCell::new(Library::load()),
         active: RefCell::new(None),
@@ -369,6 +382,80 @@ fn images_page(add_button: &gtk::Button) -> (gtk::Widget, gtk::ListBox, adw::Pre
     (page.upcast(), list, group)
 }
 
+/// Build the Download page: a search box over a list of distros, plus loading
+/// and empty states. Returns the outer widget, its stack, and the distro list.
+fn download_page() -> (gtk::Widget, gtk::Stack, gtk::ListBox) {
+    let stack = gtk::Stack::builder()
+        .transition_type(gtk::StackTransitionType::Crossfade)
+        .build();
+
+    let spinner = gtk::Spinner::builder()
+        .spinning(true)
+        .width_request(32)
+        .height_request(32)
+        .build();
+    let loading = adw::StatusPage::builder().title("Reading catalogue…").build();
+    loading.set_child(Some(&spinner));
+    stack.add_named(&loading, Some("loading"));
+
+    let empty = adw::StatusPage::builder()
+        .icon_name("folder-download-symbolic")
+        .title("No catalogue")
+        .description("osinfo-db is not installed, so there are no distros to list.")
+        .build();
+    stack.add_named(&empty, Some("empty"));
+
+    let search = gtk::SearchEntry::builder()
+        .placeholder_text("Search distros")
+        .margin_top(8)
+        .margin_start(12)
+        .margin_end(12)
+        .margin_bottom(4)
+        .build();
+    let list = gtk::ListBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .css_classes(vec!["boxed-list".to_string()])
+        .valign(gtk::Align::Start)
+        .build();
+    {
+        let search = search.clone();
+        list.set_filter_func(move |row| {
+            let q = search.text().to_lowercase();
+            if q.is_empty() {
+                return true;
+            }
+            row.clone()
+                .downcast::<adw::ExpanderRow>()
+                .map(|e| e.title().to_lowercase().contains(&q))
+                .unwrap_or(true)
+        });
+    }
+    {
+        let list = list.clone();
+        search.connect_search_changed(move |_| list.invalidate_filter());
+    }
+    let clamp = adw::Clamp::builder()
+        .maximum_size(640)
+        .child(&list)
+        .margin_top(8)
+        .margin_bottom(12)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+    let scroll = gtk::ScrolledWindow::builder()
+        .vexpand(true)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .child(&clamp)
+        .build();
+    let ready = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    ready.append(&search);
+    ready.append(&scroll);
+    stack.add_named(&ready, Some("ready"));
+
+    stack.set_visible_child_name("loading");
+    (stack.clone().upcast(), stack, list)
+}
+
 fn install_about_action(ui: &Rc<Ui>) {
     let action = gio::SimpleAction::new("about", None);
     let window = ui.window.clone();
@@ -442,12 +529,17 @@ fn wire(ui: &Rc<Ui>, nav_list: &gtk::ListBox, add_button: &gtk::Button) {
             let Some(row) = row else { return };
             let (name, title, adding) = match row.index() {
                 1 => (TAB_IMAGES, "Images", true),
+                2 => (TAB_DOWNLOAD, "Download", false),
                 _ => (TAB_MOUNT, "Mount", false),
             };
             ui.view_stack.set_visible_child_name(name);
             ui.content_title.set_title(title);
             // The add button only belongs to the Images tab.
             add_button.set_visible(adding);
+            // Read the catalogue the first time the Download tab is opened.
+            if name == TAB_DOWNLOAD {
+                load_catalog(&ui);
+            }
             if ui.overlay.is_collapsed() {
                 ui.overlay.set_show_sidebar(false);
             }
@@ -697,16 +789,22 @@ enum ImportMsg {
     Failed(String),
 }
 
-/// Copy `source` into the library with a progress dialog. When `select_after`
-/// is set, the imported image is also made the Mount selection.
-fn start_import(ui: &Rc<Ui>, source: PathBuf, select_after: bool) {
-    let name = source
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "image".to_string());
-
+/// Run a background transfer that produces an [`ImageEntry`], behind a progress
+/// dialog with a Cancel button. `spawn_worker` gets the progress sender and the
+/// cancel flag and must do the work on its own thread, sending one terminal
+/// message when it finishes. `verb` names the action for the failure toast.
+fn run_transfer<S>(
+    ui: &Rc<Ui>,
+    title: &str,
+    message: String,
+    verb: &'static str,
+    select_after: bool,
+    spawn_worker: S,
+) where
+    S: FnOnce(async_channel::Sender<ImportMsg>, Arc<AtomicBool>),
+{
     let dialog = adw::Dialog::builder()
-        .title("Importing")
+        .title(title)
         .content_width(380)
         .can_close(false)
         .build();
@@ -716,10 +814,10 @@ fn start_import(ui: &Rc<Ui>, source: PathBuf, select_after: bool) {
         .build();
     let bar = gtk::ProgressBar::builder()
         .show_text(true)
-        .text("Preparing…")
+        .text("Preparing")
         .build();
     let label = gtk::Label::builder()
-        .label(format!("Copying “{name}” into your library…"))
+        .label(message)
         .wrap(true)
         .justify(gtk::Justification::Center)
         .build();
@@ -754,24 +852,7 @@ fn start_import(ui: &Rc<Ui>, source: PathBuf, select_after: bool) {
     }
 
     let (tx, rx) = async_channel::unbounded::<ImportMsg>();
-    {
-        let cancel_flag = cancel_flag.clone();
-        thread::spawn(move || {
-            let result = import(
-                &source,
-                |(c, t)| {
-                    let _ = tx.send_blocking(ImportMsg::Progress(c, t));
-                },
-                &cancel_flag,
-            );
-            let msg = match result {
-                Ok(entry) => ImportMsg::Done(entry),
-                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => ImportMsg::Cancelled,
-                Err(e) => ImportMsg::Failed(e.to_string()),
-            };
-            let _ = tx.send_blocking(msg);
-        });
-    }
+    spawn_worker(tx, cancel_flag);
 
     let ui = ui.clone();
     glib::spawn_future_local(async move {
@@ -779,7 +860,11 @@ fn start_import(ui: &Rc<Ui>, source: PathBuf, select_after: bool) {
             match msg {
                 ImportMsg::Progress(c, t) => {
                     bar.set_fraction(if t > 0 { c as f64 / t as f64 } else { 0.0 });
-                    bar.set_text(Some(&format!("{} / {}", human_size(c), human_size(t))));
+                    if t > 0 {
+                        bar.set_text(Some(&format!("{} / {}", human_size(c), human_size(t))));
+                    } else {
+                        bar.set_text(Some(&human_size(c)));
+                    }
                 }
                 ImportMsg::Done(entry) => {
                     dialog.force_close();
@@ -798,12 +883,151 @@ fn start_import(ui: &Rc<Ui>, source: PathBuf, select_after: bool) {
                 }
                 ImportMsg::Failed(m) => {
                     dialog.force_close();
-                    ui.toast(&format!("Import failed: {m}"));
+                    ui.toast(&format!("{verb} failed: {m}"));
                     break;
                 }
             }
         }
     });
+}
+
+/// Turn a transfer result into the message that ends the progress loop.
+fn terminal_msg(result: std::io::Result<ImageEntry>) -> ImportMsg {
+    match result {
+        Ok(entry) => ImportMsg::Done(entry),
+        Err(e) if e.kind() == std::io::ErrorKind::Interrupted => ImportMsg::Cancelled,
+        Err(e) => ImportMsg::Failed(e.to_string()),
+    }
+}
+
+/// Copy `source` into the library. With `select_after`, the imported image also
+/// becomes the Mount selection.
+fn start_import(ui: &Rc<Ui>, source: PathBuf, select_after: bool) {
+    let name = source
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "image".to_string());
+    run_transfer(
+        ui,
+        "Importing",
+        format!("Copying {name} into your library."),
+        "Import",
+        select_after,
+        move |tx, cancel| {
+            thread::spawn(move || {
+                let result = import(
+                    &source,
+                    |(c, t)| {
+                        let _ = tx.send_blocking(ImportMsg::Progress(c, t));
+                    },
+                    &cancel,
+                );
+                let _ = tx.send_blocking(terminal_msg(result));
+            });
+        },
+    );
+}
+
+/// Download `img` from its catalogue URL into the library.
+fn start_download(ui: &Rc<Ui>, img: &catalog::Image) {
+    let url = img.url.clone();
+    let name = img.os_name.clone();
+    run_transfer(
+        ui,
+        "Downloading",
+        format!("Downloading {name}."),
+        "Download",
+        false,
+        move |tx, cancel| {
+            thread::spawn(move || {
+                let result = download(
+                    &url,
+                    |(c, t)| {
+                        let _ = tx.send_blocking(ImportMsg::Progress(c, t));
+                    },
+                    &cancel,
+                );
+                let _ = tx.send_blocking(terminal_msg(result));
+            });
+        },
+    );
+}
+
+/// Read osinfo-db in the background the first time the Download tab opens, then
+/// fill the distro list.
+fn load_catalog(ui: &Rc<Ui>) {
+    if *ui.catalog_loaded.borrow() {
+        return;
+    }
+    *ui.catalog_loaded.borrow_mut() = true;
+    ui.download_stack.set_visible_child_name("loading");
+
+    let (tx, rx) = async_channel::bounded::<Vec<catalog::Distro>>(1);
+    thread::spawn(move || {
+        let _ = tx.send_blocking(catalog::load());
+    });
+
+    let ui = ui.clone();
+    glib::spawn_future_local(async move {
+        let Ok(distros) = rx.recv().await else {
+            return;
+        };
+        if distros.is_empty() {
+            ui.download_stack.set_visible_child_name("empty");
+        } else {
+            populate_catalog(&ui, distros);
+            ui.download_stack.set_visible_child_name("ready");
+        }
+    });
+}
+
+/// Fill the distro list. Each distro's image rows are built the first time it is
+/// opened, so a thousand-image catalogue stays cheap to show.
+fn populate_catalog(ui: &Rc<Ui>, distros: Vec<catalog::Distro>) {
+    for distro in distros {
+        let count = distro.images.len();
+        let exp = adw::ExpanderRow::builder()
+            .title(&distro.name)
+            .subtitle(format!("{count} image{}", if count == 1 { "" } else { "s" }))
+            .build();
+
+        let images = Rc::new(distro.images);
+        let filled = Rc::new(Cell::new(false));
+        let ui_row = ui.clone();
+        exp.connect_expanded_notify(move |exp| {
+            if !exp.is_expanded() || filled.get() {
+                return;
+            }
+            filled.set(true);
+            for img in images.iter() {
+                let row = adw::ActionRow::builder()
+                    .title(image_title(img))
+                    .subtitle(image_subtitle(img))
+                    .activatable(true)
+                    .build();
+                row.add_suffix(&gtk::Image::from_icon_name("folder-download-symbolic"));
+                {
+                    let ui = ui_row.clone();
+                    let img = img.clone();
+                    row.connect_activated(move |_| start_download(&ui, &img));
+                }
+                exp.add_row(&row);
+            }
+        });
+        ui.download_list.append(&exp);
+    }
+}
+
+fn image_title(img: &catalog::Image) -> String {
+    match &img.variant {
+        Some(v) => format!("{} · {}", img.os_name, v),
+        None => img.os_name.clone(),
+    }
+}
+
+fn image_subtitle(img: &catalog::Image) -> String {
+    let kind = if img.live { "live" } else { "installer" };
+    format!("{} · {}", img.arch, kind)
 }
 
 fn remove_image(ui: &Rc<Ui>, index: usize) {
