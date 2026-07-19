@@ -1,34 +1,89 @@
-# BootDrive
+<div align="center">
+  <img src="data/icon.png" width="120" alt="BootDrive icon"/>
 
-Turn a postmarketOS phone (target: Fairphone 6) into a bootable USB drive.
-Select one ISO or raw disk image and expose the phone to a connected computer
-as a bootable USB CD-ROM or USB disk.
+  <h1>BootDrive</h1>
 
-## Architecture
+  <p><b>Turn your Linux phone into a bootable USB drive.</b></p>
 
-A Flatpak app cannot be root (verified — the sandbox blocks configfs writes), so
-the privileged USB-gadget work is done by postmarketOS's **`usb-signaller`**,
-which already runs as root and owns the `com.meego.usb_moded` D-Bus interface.
-BootDrive adds a **`mass_storage_mode`** to usb-signaller (see
-[`contrib/usb-signaller-mass-storage/`](contrib/usb-signaller-mass-storage/) and
-the fork at <https://codeberg.org/bresilla/usb-signaller>), then ships only two
-thin frontends that drive it:
+  <p>
+    Pick one disk image and expose your phone to a connected computer as a
+    read-only USB&nbsp;CD-ROM or USB&nbsp;disk — then eject to return to normal
+    USB behaviour. Developed on postmarketOS (Fairphone&nbsp;6).
+  </p>
 
-- **`bootdrive`** — a native CLI (`expose`/`eject`/`status`/`watch`).
-- **`net.bresilla.BootDrive`** — a sandboxed Flatpak GTK4/libadwaita GUI.
+  <img src="data/screencast.gif" width="280" alt="BootDrive demo"/>
+</div>
 
-To expose an image a frontend calls `set_config("image=…,cdrom=…")` then
-`set_mode("mass_storage_mode")`; eject is `set_mode("developer_mode")`.
-usb-signaller's policy already lets any user call these, so there is **no
-BootDrive daemon, group or PolicyKit action** — install the Flatpak (plus a
-usb-signaller with the patch) and go.
+## Screenshots
+
+<div align="center">
+  <img src="data/screenshots/mount.png" width="240" alt="Mount view — connected as a bootable drive"/>
+  <img src="data/screenshots/choose.png" width="240" alt="Choose an image from the library"/>
+  <img src="data/screenshots/images.png" width="240" alt="Manage the image library"/>
+</div>
+
+## Install
+
+BootDrive ships two frontends: a sandboxed **GTK4 / libadwaita Flatpak GUI**
+(`net.bresilla.BootDrive`) and a static **CLI** (`bootdrive`). Grab them from the
+[latest release](https://github.com/bresilla/bootdrive/releases/latest).
+
+### GUI (Flatpak)
+
+Download the bundle for your architecture, then:
+
+```sh
+# phones (aarch64)
+flatpak install --user ./bootdrive-aarch64.flatpak
+# desktops (x86_64)
+flatpak install --user ./bootdrive-x86_64.flatpak
+
+flatpak run net.bresilla.BootDrive
+```
+
+The GNOME 48 runtime is pulled from Flathub — add the remote first if you don't
+have it:
+
+```sh
+flatpak remote-add --if-not-exists --user \
+  flathub https://flathub.org/repo/flathub.flatpakrepo
+```
+
+### CLI
+
+`bootdrive-cli-aarch64-musl.tar.gz` is a fully static binary — it runs on
+Alpine / postmarketOS with no toolchain or glibc:
+
+```sh
+tar xzf bootdrive-cli-*.tar.gz
+./bootdrive status          # expose | eject | status | watch
+```
+
+## Requires: usb-signaller
+
+BootDrive is **unprivileged and sandboxed** — it never touches configfs itself.
+The low-level USB-gadget work is done by postmarketOS's
+[**usb-signaller**](https://codeberg.org/DylanVanAssche/usb-signaller), which
+runs as root and owns the `com.meego.usb_moded` D-Bus interface. BootDrive drives
+it, using a small patch that adds a mass-storage / CD-ROM mode:
+
+- **fork:** <https://codeberg.org/bresilla/usb-signaller> (branch `mass-storage-mode`)
+
+Without a compatible `usb-signaller` running, the app still launches — it simply
+reports that no compatible USB service is available.
+
+## How it works
+
+1. The GUI copies your chosen image into its own data dir (through the
+   file-chooser **portal** — no host filesystem access required).
+2. It asks `com.meego.usb_moded` to switch into `mass_storage_mode` /
+   `cdrom_mode`.
+3. `usb-signaller` binds the USB mass-storage gadget to that image, **read-only**.
+4. **Eject** tears the gadget down and returns the phone to normal USB behaviour.
 
 ```
-CLI / GUI (Flatpak)  ──system D-Bus (com.meego.usb_moded)──▶  usb-signaller (root)  ──▶  UDC
+GUI / CLI  ──system D-Bus (com.meego.usb_moded)──▶  usb-signaller (root)  ──▶  UDC
 ```
-
-See [PLAN.md](PLAN.md) for the full design and [FLATHUB.md](FLATHUB.md) for CI /
-Flathub.
 
 ## Workspace layout
 
@@ -36,54 +91,24 @@ Flathub.
 | --- | --- |
 | `crates/bootdrive-common` | Shared exposure mode, state, and `com.meego.usb_moded` constants |
 | `crates/bootdrive-cli` | Native CLI frontend (`bootdrive`) |
-| `crates/bootdrive-gui` | GTK4/libadwaita Flatpak frontend |
+| `crates/bootdrive-gui` | GTK4 / libadwaita Flatpak frontend |
 
-The `mass_storage_mode` patch to usb-signaller lives in
-`contrib/usb-signaller-mass-storage/`.
+## Build from source
 
-## Development
-
-The Nix shell provides the full toolchain (Rust, GTK4, libadwaita, D-Bus,
-PolicyKit, Flatpak, AppStream/desktop validators, `just`):
+Needs Rust and GTK4 / libadwaita. With Nix:
 
 ```sh
 nix develop
-just check          # fmt + clippy + tests
-just cli status     # drive usb-signaller from the CLI
-just run-gui        # run the GUI outside Flatpak
+cargo build --release -p bootdrive-gui   # GUI
+cargo build --release -p bootdrive-cli   # CLI
 ```
 
-The CLI and GUI talk to `com.meego.usb_moded` on the system bus, so they need a
-running (patched) usb-signaller to do anything.
+Flatpak bundle:
 
-For aarch64: `just cross-cli` builds a static `bootdrive` CLI, and
-`just cross-usb-signaller` builds the patched usb-signaller — both copyable
-straight onto the phone.
-
-## The privileged side: patched usb-signaller
-
-The `mass_storage_mode` is a change to usb-signaller itself (Rust, on Codeberg):
-
-- Patch + notes: `contrib/usb-signaller-mass-storage/`.
-- Fork with the patch applied: <https://codeberg.org/bresilla/usb-signaller>
-  (branch `mass-storage-mode`), proposed upstream to
-  <https://codeberg.org/DylanVanAssche/usb-signaller>.
-
-Until it lands upstream, run the patched build on the phone (replace
-`/usr/bin/usb-signaller` and restart the service).
-
-## Packaging
-
-- **Flatpak (GUI):** built for x86_64 + aarch64 by CI (`.github/workflows/flatpak.yml`)
-  — see [FLATHUB.md](FLATHUB.md). Local: `just flatpak-sources` then
-  `just flatpak-build`. Fully offline via `data/cargo-sources.json`.
-- **CLI:** static aarch64 binary attached to GitHub releases, or `just cross-cli`.
-
-## Status
-
-The CLI, GUI, and the usb-signaller `mass_storage_mode` patch build and are
-being validated on a Fairphone 6 running postmarketOS.
+```sh
+flatpak-builder --user --install --force-clean build data/net.bresilla.BootDrive.yml
+```
 
 ## License
 
-MIT
+[MIT](LICENSE) © Trim Bresilla
