@@ -12,8 +12,6 @@ use std::path::{Path, PathBuf};
 
 /// One distro with all of its downloadable images.
 pub struct Distro {
-    /// Grouping key from osinfo-db (e.g. `ubuntu`), used for sorting.
-    pub key: String,
     /// Name shown in the list (e.g. `Ubuntu`).
     pub name: String,
     /// Images, newest release first.
@@ -35,17 +33,6 @@ pub struct Image {
     pub url: String,
     /// Parsed version, used only to sort newest first.
     version: f64,
-}
-
-impl Image {
-    /// One-line label for the list row.
-    pub fn label(&self) -> String {
-        let kind = if self.live { "live" } else { "installer" };
-        match &self.variant {
-            Some(v) => format!("{} · {} · {} · {}", self.os_name, v, self.arch, kind),
-            None => format!("{} · {} · {}", self.os_name, self.arch, kind),
-        }
-    }
 }
 
 /// Architectures worth offering for a PC-bootable USB stick. osinfo-db carries
@@ -85,18 +72,18 @@ pub fn load() -> Vec<Distro> {
         let Ok(doc) = roxmltree::Document::parse(&text) else {
             continue;
         };
-        for os in doc
-            .descendants()
-            .filter(|n| n.has_tag_name("os"))
-        {
+        for os in doc.descendants().filter(|n| n.has_tag_name("os")) {
             parse_os(os, &mut by_key);
         }
     }
 
     let mut distros: Vec<Distro> = by_key.into_values().collect();
     for d in &mut distros {
-        d.images
-            .sort_by(|a, b| b.version.partial_cmp(&a.version).unwrap_or(std::cmp::Ordering::Equal));
+        d.images.sort_by(|a, b| {
+            b.version
+                .partial_cmp(&a.version)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
     distros.retain(|d| !d.images.is_empty());
     distros.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
@@ -104,10 +91,7 @@ pub fn load() -> Vec<Distro> {
 }
 
 /// Read one `<os>` element and append its media to the matching distro.
-fn parse_os(
-    os: roxmltree::Node,
-    by_key: &mut std::collections::HashMap<String, Distro>,
-) {
+fn parse_os(os: roxmltree::Node, by_key: &mut std::collections::HashMap<String, Distro>) {
     let name = child_text(os, "name").unwrap_or_default();
     if name.is_empty() {
         return;
@@ -151,7 +135,6 @@ fn parse_os(
             .filter(|v| v != &name);
 
         let entry = by_key.entry(key.clone()).or_insert_with(|| Distro {
-            key: key.clone(),
             name: pretty_distro(&key),
             images: Vec::new(),
         });
@@ -226,7 +209,14 @@ mod tests {
         let total: usize = distros.iter().map(|d| d.images.len()).sum();
         println!("{} distros, {total} images", distros.len());
         for d in distros.iter().take(8) {
-            println!("  {} ({} images), e.g. {}", d.name, d.images.len(), d.images[0].label());
+            let img = &d.images[0];
+            println!(
+                "  {} ({} images), e.g. {} {}",
+                d.name,
+                d.images.len(),
+                img.os_name,
+                img.arch
+            );
         }
     }
 }

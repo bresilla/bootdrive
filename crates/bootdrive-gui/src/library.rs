@@ -147,7 +147,7 @@ pub fn download<F: FnMut(Progress)>(
 
     let resp = ureq::get(url)
         .call()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
     let total = resp
         .header("Content-Length")
         .and_then(|v| v.parse::<u64>().ok())

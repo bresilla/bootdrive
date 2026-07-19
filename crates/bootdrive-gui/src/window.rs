@@ -394,7 +394,9 @@ fn download_page() -> (gtk::Widget, gtk::Stack, gtk::ListBox) {
         .width_request(32)
         .height_request(32)
         .build();
-    let loading = adw::StatusPage::builder().title("Reading catalogue…").build();
+    let loading = adw::StatusPage::builder()
+        .title("Reading catalogue…")
+        .build();
     loading.set_child(Some(&spinner));
     stack.add_named(&loading, Some("loading"));
 
@@ -988,7 +990,10 @@ fn populate_catalog(ui: &Rc<Ui>, distros: Vec<catalog::Distro>) {
         let count = distro.images.len();
         let exp = adw::ExpanderRow::builder()
             .title(&distro.name)
-            .subtitle(format!("{count} image{}", if count == 1 { "" } else { "s" }))
+            .subtitle(format!(
+                "{count} image{}",
+                if count == 1 { "" } else { "s" }
+            ))
             .build();
 
         let images = Rc::new(distro.images);
@@ -1149,7 +1154,8 @@ impl Ui {
         } else {
             vec!["bd-hero".to_string(), kind.to_string()]
         };
-        self.hero.set_css_classes(&hero.iter().map(String::as_str).collect::<Vec<_>>());
+        self.hero
+            .set_css_classes(&hero.iter().map(String::as_str).collect::<Vec<_>>());
         let badge = if kind == "idle" || kind == "off" {
             vec!["bd-badge"]
         } else {
@@ -1178,9 +1184,7 @@ impl Ui {
             .set_text(&detail_text(state, entry.as_ref()));
 
         let (kind, icon) = match state {
-            DriveState::Preparing | DriveState::Ejecting => {
-                ("busy", "content-loading-symbolic")
-            }
+            DriveState::Preparing | DriveState::Ejecting => ("busy", "content-loading-symbolic"),
             DriveState::Active => ("active", "object-select-symbolic"),
             DriveState::Error => ("error", "dialog-warning-symbolic"),
             _ => ("idle", "drive-removable-media-symbolic"),
