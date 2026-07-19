@@ -24,6 +24,7 @@ fi
 
 echo "==> copying to $HOST…"
 scp $SSH_OPTS "$BIN" "$HOST:~/usb-signaller.patched"
+scp $SSH_OPTS "$ROOT/data/zz-bootdrive-usb-moded.conf" "$HOST:~/zz-bootdrive-usb-moded.conf"
 
 echo "==> installing (enter your sudo password when prompted)…"
 # STAGED expands in the login shell to the real path; each sudo then uses the
@@ -31,10 +32,13 @@ echo "==> installing (enter your sudo password when prompted)…"
 ssh $SSH_OPTS -t "$HOST" '
 set -e
 STAGED="$HOME/usb-signaller.patched"
+CONF="$HOME/zz-bootdrive-usb-moded.conf"
 sudo sh -c "
   [ -e /usr/bin/usb-signaller.orig ] || cp -a /usr/bin/usb-signaller /usr/bin/usb-signaller.orig
   install -m755 \"$STAGED\" /usr/bin/usb-signaller
+  install -m644 \"$CONF\" /usr/share/dbus-1/system.d/zz-bootdrive-usb-moded.conf
   systemctl restart usb-signaller
+  systemctl reload dbus || systemctl restart dbus || true
 "
 sleep 1
 echo "--- supported modes now (expect mass_storage_mode): ---"
