@@ -5,7 +5,7 @@
 //! itself and does nothing to configfs.
 
 mod application;
-mod image_selection;
+mod library;
 mod usb_moded;
 mod window;
 
