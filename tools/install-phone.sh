@@ -17,9 +17,22 @@ TMP="$(mktemp -d)"
 SSH_OPTS="-o StrictHostKeyChecking=accept-new"
 trap 'rm -rf "$TMP"' EXIT
 
-echo "==> latest flatpak workflow run…"
-RUN_ID="$(gh run list --workflow=flatpak.yml --limit 1 --json databaseId -q '.[0].databaseId')"
-STATUS="$(gh run list --workflow=flatpak.yml --limit 1 --json status -q '.[0].status')"
+# Select the flatpak run for the CURRENT commit (not just the newest run —
+# right after a push the new run may not be registered yet, which used to grab
+# a stale build).
+SHA="$(git rev-parse HEAD)"
+echo "==> flatpak run for commit ${SHA:0:7}…"
+RUN_ID=""
+for _ in $(seq 1 30); do
+	RUN_ID="$(gh run list --workflow=flatpak.yml --limit 20 \
+		--json databaseId,headSha \
+		-q "[.[] | select(.headSha==\"$SHA\")][0].databaseId" 2>/dev/null || true)"
+	[ -n "$RUN_ID" ] && break
+	echo "    run not registered yet, waiting…"; sleep 5
+done
+[ -n "$RUN_ID" ] || { echo "!! no flatpak run found for $SHA — did you push?" >&2; exit 1; }
+
+STATUS="$(gh run view "$RUN_ID" --json status -q '.status')"
 if [ "$STATUS" != "completed" ]; then
 	echo "    run $RUN_ID is $STATUS — waiting for it to finish…"
 	gh run watch "$RUN_ID" --exit-status >/dev/null || {
