@@ -1,8 +1,9 @@
-//! The BootDrive window: an adaptive sidebar (image library) + a content pane
-//! (selected image + expose/eject), with a primary menu and About.
+//! The BootDrive window.
 //!
-//! Built with `AdwNavigationSplitView`, which collapses to a single pane on the
-//! phone. State comes from usb-signaller via [`DaemonClient`].
+//! An `AdwOverlaySplitView` with a hamburger-toggled sidebar of tabs:
+//! **Mount** (the main view — USB status + expose/eject) and **Images** (the
+//! ISO library). Adaptive: on the phone the sidebar becomes an overlay. State
+//! comes from usb-signaller via [`DaemonClient`].
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -19,48 +20,48 @@ use crate::usb_moded::{DaemonClient, DaemonCommand, DaemonUpdate, UnreachableRea
 /// Shared UI state.
 struct Ui {
     window: adw::ApplicationWindow,
-    split: adw::NavigationSplitView,
+    overlay: adw::OverlaySplitView,
     toasts: adw::ToastOverlay,
-
-    // Sidebar.
-    status_row: adw::ActionRow,
-    list: gtk::ListBox,
-
-    // Content.
-    content_stack: gtk::Stack,
     content_title: adw::WindowTitle,
-    image_group: adw::PreferencesGroup,
-    size_row: adw::ActionRow,
-    mode_row: adw::ComboRow,
-    path_row: adw::ActionRow,
+    view_stack: gtk::Stack,
+
+    // Mount view.
+    mount_stack: gtk::Stack,
+    mount_status_title: gtk::Label,
+    mount_status_detail: gtk::Label,
+    mount_image_row: adw::ActionRow,
+    mount_mode_row: adw::ComboRow,
     primary_button: gtk::Button,
     setup_status: adw::StatusPage,
 
+    // Images view.
+    images_list: gtk::ListBox,
+
     client: DaemonClient,
     library: RefCell<Library>,
-    selected: RefCell<Option<usize>>,
+    active: RefCell<Option<usize>>,
     state: RefCell<DriveState>,
     busy: RefCell<bool>,
     available: RefCell<bool>,
 }
+
+const TAB_MOUNT: &str = "mount";
+const TAB_IMAGES: &str = "images";
 
 /// Build and present the main window.
 pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("BootDrive")
-        .default_width(820)
-        .default_height(560)
+        .default_width(860)
+        .default_height(600)
         .width_request(320)
         .height_request(320)
         .build();
 
     let toasts = adw::ToastOverlay::new();
 
-    // ---- Sidebar ----------------------------------------------------------
-    let add_button = gtk::Button::from_icon_name("list-add-symbolic");
-    add_button.set_tooltip_text(Some("Add an image"));
-
+    // ---- Sidebar (tabs + menu) -------------------------------------------
     let menu = gio::Menu::new();
     menu.append(Some("About BootDrive"), Some("win.about"));
     let menu_button = gtk::MenuButton::builder()
@@ -68,148 +69,96 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         .tooltip_text("Main menu")
         .menu_model(&menu)
         .build();
-
-    let sidebar_header = adw::HeaderBar::new();
-    sidebar_header.pack_start(&add_button);
+    let sidebar_header = adw::HeaderBar::builder().show_title(false).build();
     sidebar_header.pack_end(&menu_button);
 
-    let status_row = adw::ActionRow::builder()
-        .title("Connecting…")
-        .subtitle("USB status")
-        .build();
-    let status_icon = gtk::Image::from_icon_name("content-loading-symbolic");
-    status_row.add_prefix(&status_icon);
-    let status_group = adw::PreferencesGroup::new();
-    status_group.add(&status_row);
-
-    let list = gtk::ListBox::builder()
+    let nav_list = gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::Single)
-        .css_classes(vec!["boxed-list".to_string()])
+        .css_classes(vec!["navigation-sidebar".to_string()])
         .build();
-    let images_group = adw::PreferencesGroup::builder().title("Images").build();
-    images_group.add(&list);
-
-    let sidebar_box = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(18)
-        .margin_top(12)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
-        .build();
-    sidebar_box.append(&status_group);
-    sidebar_box.append(&images_group);
-    let sidebar_scroll = gtk::ScrolledWindow::builder()
-        .hscrollbar_policy(gtk::PolicyType::Never)
-        .child(&sidebar_box)
-        .build();
+    nav_list.append(&nav_row("Mount", "drive-removable-media-symbolic"));
+    nav_list.append(&nav_row("Images", "media-optical-symbolic"));
 
     let sidebar_toolbar = adw::ToolbarView::new();
     sidebar_toolbar.add_top_bar(&sidebar_header);
-    sidebar_toolbar.set_content(Some(&sidebar_scroll));
-    let sidebar_page = adw::NavigationPage::new(&sidebar_toolbar, "BootDrive");
+    sidebar_toolbar.set_content(Some(&nav_list));
+    sidebar_toolbar.add_css_class("sidebar-pane");
 
     // ---- Content ----------------------------------------------------------
-    let content_title = adw::WindowTitle::new("BootDrive", "");
+    let sidebar_toggle = gtk::ToggleButton::builder()
+        .icon_name("open-menu-symbolic")
+        .tooltip_text("Show tabs")
+        .active(true)
+        .build();
+    let add_button = gtk::Button::from_icon_name("list-add-symbolic");
+    add_button.set_tooltip_text(Some("Add an image"));
+    add_button.set_visible(false);
+
+    let content_title = adw::WindowTitle::new("Mount", "");
     let content_header = adw::HeaderBar::new();
     content_header.set_title_widget(Some(&content_title));
+    content_header.pack_start(&sidebar_toggle);
+    content_header.pack_end(&add_button);
 
-    // Detail page.
-    let image_group = adw::PreferencesGroup::builder()
-        .title("Selected image")
-        .build();
-    let size_row = adw::ActionRow::builder().title("Size").build();
-    let mode_model = gtk::StringList::new(&["USB CD-ROM", "USB disk"]);
-    let mode_row = adw::ComboRow::builder()
-        .title("Exposure mode")
-        .subtitle("How the computer sees it")
-        .model(&mode_model)
-        .build();
-    let path_row = adw::ActionRow::builder().title("Location").build();
-    path_row.add_css_class("property");
-    image_group.add(&size_row);
-    image_group.add(&mode_row);
-    image_group.add(&path_row);
-
-    let primary_button = gtk::Button::builder()
-        .label("Expose over USB")
-        .css_classes(vec!["suggested-action".to_string(), "pill".to_string()])
-        .halign(gtk::Align::Center)
-        .margin_top(6)
-        .build();
-    let button_clamp = adw::Clamp::builder()
-        .maximum_size(360)
-        .child(&primary_button)
-        .build();
-
-    let detail_page = adw::PreferencesPage::new();
-    detail_page.add(&image_group);
-    let button_group = adw::PreferencesGroup::new();
-    button_group.add(&button_clamp);
-    detail_page.add(&button_group);
-
-    // Empty + setup pages.
-    let empty_status = adw::StatusPage::builder()
-        .icon_name("drive-removable-media-symbolic")
-        .title("No image selected")
-        .description("Pick an image from the sidebar, or add a new .iso/.img/.raw.")
-        .build();
-    let setup_status = adw::StatusPage::builder()
-        .icon_name("dialog-warning-symbolic")
-        .title("usb-signaller unavailable")
-        .build();
-
-    let content_stack = gtk::Stack::builder()
+    let view_stack = gtk::Stack::builder()
         .transition_type(gtk::StackTransitionType::Crossfade)
         .build();
-    content_stack.add_named(&empty_status, Some("empty"));
-    content_stack.add_named(&detail_page, Some("detail"));
-    content_stack.add_named(&setup_status, Some("setup"));
+    let (mount_page, mount_widgets) = mount_page();
+    view_stack.add_named(&mount_page, Some(TAB_MOUNT));
+    let (images_page, images_list) = images_page(&add_button);
+    view_stack.add_named(&images_page, Some(TAB_IMAGES));
+    view_stack.set_visible_child_name(TAB_MOUNT);
 
     let content_toolbar = adw::ToolbarView::new();
     content_toolbar.add_top_bar(&content_header);
-    content_toolbar.set_content(Some(&content_stack));
-    let content_page = adw::NavigationPage::new(&content_toolbar, "Image");
+    content_toolbar.set_content(Some(&view_stack));
 
-    // ---- Split view + adaptive breakpoint ---------------------------------
-    let split = adw::NavigationSplitView::builder()
-        .sidebar(&sidebar_page)
-        .content(&content_page)
-        .min_sidebar_width(280.0)
+    // ---- Overlay split view + adaptive breakpoint -------------------------
+    let overlay = adw::OverlaySplitView::builder()
+        .sidebar(&sidebar_toolbar)
+        .content(&content_toolbar)
+        .max_sidebar_width(240.0)
         .build();
-    toasts.set_child(Some(&split));
+    overlay
+        .bind_property("show-sidebar", &sidebar_toggle, "active")
+        .bidirectional()
+        .sync_create()
+        .build();
+    toasts.set_child(Some(&overlay));
     window.set_content(Some(&toasts));
 
     if let Ok(cond) = adw::BreakpointCondition::parse("max-width: 550sp") {
         let bp = adw::Breakpoint::new(cond);
-        bp.add_setter(&split, "collapsed", Some(&true.to_value()));
+        bp.add_setter(&overlay, "collapsed", Some(&true.to_value()));
         window.add_breakpoint(bp);
     }
 
     let ui = Rc::new(Ui {
         window: window.clone(),
-        split,
+        overlay,
         toasts,
-        status_row,
-        list,
-        content_stack,
         content_title,
-        image_group,
-        size_row,
-        mode_row,
-        path_row,
-        primary_button,
-        setup_status,
+        view_stack,
+        mount_stack: mount_widgets.stack,
+        mount_status_title: mount_widgets.status_title,
+        mount_status_detail: mount_widgets.status_detail,
+        mount_image_row: mount_widgets.image_row,
+        mount_mode_row: mount_widgets.mode_row,
+        primary_button: mount_widgets.primary_button,
+        setup_status: mount_widgets.setup_status,
+        images_list,
         client: DaemonClient::spawn(),
         library: RefCell::new(Library::load()),
-        selected: RefCell::new(None),
+        active: RefCell::new(None),
         state: RefCell::new(DriveState::Unavailable),
         busy: RefCell::new(false),
         available: RefCell::new(false),
     });
 
     install_about_action(&ui);
-    wire(&ui, &add_button);
+    wire(&ui, &nav_list, &add_button);
+    // Select the Mount tab by default.
+    nav_list.select_row(nav_list.row_at_index(0).as_ref());
     rebuild_list(&ui);
     listen_for_updates(&ui);
     ui.refresh();
@@ -217,44 +166,223 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     window
 }
 
+fn nav_row(title: &str, icon: &str) -> adw::ActionRow {
+    let row = adw::ActionRow::builder().title(title).build();
+    row.add_prefix(&gtk::Image::from_icon_name(icon));
+    row
+}
+
+/// Widgets we keep from the Mount page.
+struct MountWidgets {
+    stack: gtk::Stack,
+    status_title: gtk::Label,
+    status_detail: gtk::Label,
+    image_row: adw::ActionRow,
+    mode_row: adw::ComboRow,
+    primary_button: gtk::Button,
+    setup_status: adw::StatusPage,
+}
+
+/// Build the Mount page and return it plus the widgets we update.
+fn mount_page() -> (gtk::Widget, MountWidgets) {
+    let page = adw::PreferencesPage::new();
+
+    // USB status group.
+    let status_group = adw::PreferencesGroup::new();
+    let status_box = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(4)
+        .margin_top(4)
+        .margin_bottom(4)
+        .build();
+    let status_title = gtk::Label::builder()
+        .halign(gtk::Align::Start)
+        .css_classes(vec!["title-1".to_string()])
+        .label("Connecting…")
+        .build();
+    let status_detail = gtk::Label::builder()
+        .halign(gtk::Align::Start)
+        .wrap(true)
+        .css_classes(vec!["dim-label".to_string()])
+        .label("")
+        .build();
+    status_box.append(&status_title);
+    status_box.append(&status_detail);
+    status_group.add(&status_box);
+
+    // Selected image group.
+    let image_group = adw::PreferencesGroup::builder().title("Image").build();
+    let image_row = adw::ActionRow::builder()
+        .title("No image selected")
+        .subtitle("Add one in the Images tab")
+        .build();
+    image_row.add_prefix(&gtk::Image::from_icon_name(
+        "drive-removable-media-symbolic",
+    ));
+    let mode_model = gtk::StringList::new(&["USB CD-ROM", "USB disk"]);
+    let mode_row = adw::ComboRow::builder()
+        .title("Exposure mode")
+        .subtitle("How the computer sees it")
+        .model(&mode_model)
+        .build();
+    image_group.add(&image_row);
+    image_group.add(&mode_row);
+
+    // Action button.
+    let primary_button = gtk::Button::builder()
+        .label("Expose over USB")
+        .css_classes(vec!["suggested-action".to_string(), "pill".to_string()])
+        .halign(gtk::Align::Center)
+        .margin_top(6)
+        .build();
+    let button_group = adw::PreferencesGroup::new();
+    button_group.add(
+        &adw::Clamp::builder()
+            .maximum_size(360)
+            .child(&primary_button)
+            .build(),
+    );
+
+    page.add(&status_group);
+    page.add(&image_group);
+    page.add(&button_group);
+
+    // Setup page (usb-signaller unavailable).
+    let setup_status = adw::StatusPage::builder()
+        .icon_name("dialog-warning-symbolic")
+        .title("usb-signaller unavailable")
+        .build();
+
+    let stack = gtk::Stack::builder()
+        .transition_type(gtk::StackTransitionType::Crossfade)
+        .build();
+    stack.add_named(&page, Some("ready"));
+    stack.add_named(&setup_status, Some("setup"));
+    stack.set_visible_child_name("ready");
+
+    (
+        stack.clone().upcast(),
+        MountWidgets {
+            stack,
+            status_title,
+            status_detail,
+            image_row,
+            mode_row,
+            primary_button,
+            setup_status,
+        },
+    )
+}
+
+/// Build the Images page and return it plus the list box.
+fn images_page(add_button: &gtk::Button) -> (gtk::Widget, gtk::ListBox) {
+    let page = adw::PreferencesPage::new();
+    let group = adw::PreferencesGroup::builder().title("Images").build();
+    group.set_header_suffix(Some(add_button));
+    let list = gtk::ListBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .css_classes(vec!["boxed-list".to_string()])
+        .build();
+    group.add(&list);
+    page.add(&group);
+    (page.upcast(), list)
+}
+
 fn install_about_action(ui: &Rc<Ui>) {
     let action = gio::SimpleAction::new("about", None);
     let window = ui.window.clone();
-    action.connect_activate(move |_, _| {
-        let about = adw::AboutWindow::builder()
-            .application_name("BootDrive")
-            .application_icon("net.bresilla.BootDrive")
-            .developer_name("Kushtrim Bresilla")
-            .version("0.1.0")
-            .comments("Expose a disk image as a bootable USB drive.")
-            .website("https://github.com/bresilla/bootdrive")
-            .issue_url("https://github.com/bresilla/bootdrive/issues")
-            .license_type(gtk::License::MitX11)
-            .build();
-        about.set_transient_for(Some(&window));
-        about.set_modal(true);
-        about.present();
-    });
+    action.connect_activate(move |_, _| present_about(&window));
     ui.window.add_action(&action);
 }
 
-fn wire(ui: &Rc<Ui>, add_button: &gtk::Button) {
+/// A compact, mobile-dismissable About dialog (`AdwDialog`).
+fn present_about(window: &adw::ApplicationWindow) {
+    let dialog = adw::Dialog::builder()
+        .title("About")
+        .content_width(360)
+        .build();
+
+    let header = adw::HeaderBar::new();
+    let body = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(6)
+        .margin_top(12)
+        .margin_bottom(28)
+        .margin_start(24)
+        .margin_end(24)
+        .halign(gtk::Align::Center)
+        .build();
+    let icon = gtk::Image::from_icon_name("net.bresilla.BootDrive");
+    icon.set_pixel_size(96);
+    let name = gtk::Label::builder()
+        .label("BootDrive")
+        .css_classes(vec!["title-1".to_string()])
+        .build();
+    let version = gtk::Label::builder()
+        .label("0.1.0")
+        .css_classes(vec!["dim-label".to_string()])
+        .margin_bottom(6)
+        .build();
+    let desc = gtk::Label::builder()
+        .label("Expose a disk image as a bootable USB drive.")
+        .wrap(true)
+        .justify(gtk::Justification::Center)
+        .margin_bottom(6)
+        .build();
+    let dev = gtk::Label::builder()
+        .label("Trim Bresilla")
+        .css_classes(vec!["dim-label".to_string()])
+        .build();
+    let link = gtk::LinkButton::with_label("https://github.com/bresilla/bootdrive", "Project page");
+    for w in [
+        icon.upcast_ref::<gtk::Widget>(),
+        name.upcast_ref(),
+        version.upcast_ref(),
+        desc.upcast_ref(),
+        dev.upcast_ref(),
+        link.upcast_ref(),
+    ] {
+        body.append(w);
+    }
+
+    let tv = adw::ToolbarView::new();
+    tv.add_top_bar(&header);
+    tv.set_content(Some(&body));
+    dialog.set_child(Some(&tv));
+    dialog.present(Some(window));
+}
+
+fn wire(ui: &Rc<Ui>, nav_list: &gtk::ListBox, add_button: &gtk::Button) {
+    // Sidebar tab selection.
+    {
+        let ui = ui.clone();
+        let add_button = add_button.clone();
+        nav_list.connect_row_selected(move |_, row| {
+            let Some(row) = row else { return };
+            let (name, title, adding) = match row.index() {
+                1 => (TAB_IMAGES, "Images", true),
+                _ => (TAB_MOUNT, "Mount", false),
+            };
+            ui.view_stack.set_visible_child_name(name);
+            ui.content_title.set_title(title);
+            // The add button only belongs to the Images tab.
+            add_button.set_visible(adding);
+            if ui.overlay.is_collapsed() {
+                ui.overlay.set_show_sidebar(false);
+            }
+        });
+    }
+    // Add image.
     {
         let ui = ui.clone();
         add_button.connect_clicked(move |_| choose_image(&ui));
     }
+    // Mode combo.
     {
         let ui = ui.clone();
-        let list = ui.list.clone();
-        list.connect_row_activated(move |_, row| {
-            select(&ui, row.index() as usize);
-        });
-    }
-    {
-        let ui = ui.clone();
-        let row = ui.mode_row.clone();
+        let row = ui.mount_mode_row.clone();
         row.connect_selected_notify(move |row| {
-            if let Some(i) = *ui.selected.borrow() {
+            if let Some(i) = *ui.active.borrow() {
                 let mut lib = ui.library.borrow_mut();
                 if let Some(e) = lib.entries.get_mut(i) {
                     e.cdrom = row.selected() == 0;
@@ -263,6 +391,7 @@ fn wire(ui: &Rc<Ui>, add_button: &gtk::Button) {
             }
         });
     }
+    // Expose / eject.
     {
         let ui = ui.clone();
         let button = ui.primary_button.clone();
@@ -277,29 +406,39 @@ fn wire(ui: &Rc<Ui>, add_button: &gtk::Button) {
     }
 }
 
-/// Rebuild the sidebar list from the library.
+/// Rebuild the Images list from the library.
 fn rebuild_list(ui: &Rc<Ui>) {
-    while let Some(child) = ui.list.first_child() {
-        ui.list.remove(&child);
+    while let Some(child) = ui.images_list.first_child() {
+        ui.images_list.remove(&child);
     }
     let lib = ui.library.borrow();
-    for entry in &lib.entries {
+    if lib.entries.is_empty() {
+        let placeholder = adw::ActionRow::builder()
+            .title("No images yet")
+            .subtitle("Tap + to add an .iso, .img or .raw")
+            .build();
+        placeholder.add_css_class("dim-label");
+        ui.images_list.append(&placeholder);
+        return;
+    }
+    let active = *ui.active.borrow();
+    for (i, entry) in lib.entries.iter().enumerate() {
         let row = adw::ActionRow::builder()
             .title(&entry.display_name)
             .subtitle(subtitle_for(entry))
             .activatable(true)
             .build();
-        let icon = gtk::Image::from_icon_name(if entry.cdrom {
+        row.add_prefix(&gtk::Image::from_icon_name(if entry.cdrom {
             "media-optical-symbolic"
         } else {
             "drive-harddisk-symbolic"
-        });
-        row.add_prefix(&icon);
+        }));
+        if Some(i) == active {
+            row.add_suffix(&gtk::Image::from_icon_name("object-select-symbolic"));
+        }
         if !Library::exists(entry) {
             row.add_css_class("dim-label");
-            row.set_subtitle("missing — file not found");
         }
-
         let remove_btn = gtk::Button::from_icon_name("user-trash-symbolic");
         remove_btn.set_valign(gtk::Align::Center);
         remove_btn.add_css_class("flat");
@@ -314,27 +453,23 @@ fn rebuild_list(ui: &Rc<Ui>) {
                 }
             });
         }
-
-        ui.list.append(&row);
-    }
-}
-
-/// Remove the library entry at `index` and fix up the selection.
-fn remove_image(ui: &Rc<Ui>, index: usize) {
-    ui.library.borrow_mut().remove(index);
-    {
-        let mut sel = ui.selected.borrow_mut();
-        match *sel {
-            Some(i) if i == index => *sel = None,
-            Some(i) if i > index => *sel = Some(i - 1),
-            _ => {}
+        {
+            let ui = ui.clone();
+            let row_weak = row.downgrade();
+            row.connect_activated(move |_| {
+                if let Some(row) = row_weak.upgrade() {
+                    select_active(&ui, row.index() as usize);
+                }
+            });
         }
+        ui.images_list.append(&row);
     }
-    rebuild_list(ui);
-    ui.refresh();
 }
 
 fn subtitle_for(entry: &ImageEntry) -> String {
+    if !Library::exists(entry) {
+        return "missing — file not found".to_string();
+    }
     let size = entry
         .size
         .map(human_size)
@@ -342,17 +477,18 @@ fn subtitle_for(entry: &ImageEntry) -> String {
     format!("{} · {}", size, entry.mode().label())
 }
 
-/// Select the library entry at `index` and show the content pane.
-fn select(ui: &Rc<Ui>, index: usize) {
+/// Make the image at `index` the active one and jump to the Mount tab.
+fn select_active(ui: &Rc<Ui>, index: usize) {
     if index >= ui.library.borrow().entries.len() {
         return;
     }
-    *ui.selected.borrow_mut() = Some(index);
-    ui.split.set_show_content(true);
+    *ui.active.borrow_mut() = Some(index);
+    ui.view_stack.set_visible_child_name(TAB_MOUNT);
+    ui.content_title.set_title("Mount");
+    rebuild_list(ui);
     ui.refresh();
 }
 
-/// Open the file chooser, add the result to the library, and select it.
 fn choose_image(ui: &Rc<Ui>) {
     let filter = gtk::FileFilter::new();
     filter.set_name(Some("Disk images"));
@@ -377,11 +513,12 @@ fn choose_image(ui: &Rc<Ui>) {
             Ok(file) => {
                 if let Some(path) = file.path() {
                     let size = std::fs::metadata(&path).ok().map(|m| m.len());
-                    let entry = ImageEntry::from_path(path, size);
-                    ui.library.borrow_mut().add(entry);
+                    ui.library
+                        .borrow_mut()
+                        .add(ImageEntry::from_path(path, size));
                     rebuild_list(&ui);
                     let last = ui.library.borrow().entries.len().saturating_sub(1);
-                    select(&ui, last);
+                    select_active(&ui, last);
                 } else {
                     ui.toast("That file could not be resolved to a readable path.");
                 }
@@ -395,8 +532,22 @@ fn choose_image(ui: &Rc<Ui>) {
     );
 }
 
+fn remove_image(ui: &Rc<Ui>, index: usize) {
+    ui.library.borrow_mut().remove(index);
+    {
+        let mut active = ui.active.borrow_mut();
+        match *active {
+            Some(i) if i == index => *active = None,
+            Some(i) if i > index => *active = Some(i - 1),
+            _ => {}
+        }
+    }
+    rebuild_list(ui);
+    ui.refresh();
+}
+
 fn activate(ui: &Rc<Ui>) {
-    let Some(i) = *ui.selected.borrow() else {
+    let Some(i) = *ui.active.borrow() else {
         ui.toast("Select an image first.");
         return;
     };
@@ -490,56 +641,45 @@ impl Ui {
             UnreachableReason::Other(_) => "BootDrive could not talk to usb-signaller.",
         };
         self.setup_status.set_description(Some(desc));
-        self.status_row.set_title("Unavailable");
-        self.status_row.set_subtitle("USB status");
-        self.content_stack.set_visible_child_name("setup");
+        self.mount_stack.set_visible_child_name("setup");
     }
 
     fn refresh(&self) {
-        // Sidebar status line.
         let state = *self.state.borrow();
-        if *self.available.borrow() {
-            self.status_row.set_title(state.headline());
-            self.status_row.set_subtitle(match state {
-                DriveState::Active => "exposed over USB",
-                _ => "ready",
-            });
-        }
+        let available = *self.available.borrow();
 
-        // Content.
-        if !*self.available.borrow() {
-            // setup page already shown by show_setup
+        if !available {
+            self.mount_stack.set_visible_child_name("setup");
             return;
         }
+        self.mount_stack.set_visible_child_name("ready");
 
-        let sel = *self.selected.borrow();
-        let entry = sel.and_then(|i| self.library.borrow().entries.get(i).cloned());
+        self.mount_status_title.set_text(state.headline());
+
+        let active = *self.active.borrow();
+        let entry = active.and_then(|i| self.library.borrow().entries.get(i).cloned());
+
+        self.mount_status_detail
+            .set_text(&detail_text(state, entry.as_ref()));
 
         match entry {
             Some(entry) => {
-                self.content_title.set_title(&entry.display_name);
-                self.content_title
-                    .set_subtitle(if state == DriveState::Active {
-                        "exposed over USB"
-                    } else {
-                        "ready to expose"
-                    });
-                self.size_row.set_subtitle(
-                    &entry
-                        .size
-                        .map(human_size)
-                        .unwrap_or_else(|| "unknown".to_string()),
-                );
-                self.mode_row.set_visible(entry.hybrid);
-                self.mode_row.set_selected(if entry.cdrom { 0 } else { 1 });
-                self.path_row.set_subtitle(&entry.path);
-                self.image_group.set_visible(true);
-                self.content_stack.set_visible_child_name("detail");
+                self.mount_image_row.set_title(&entry.display_name);
+                let size = entry
+                    .size
+                    .map(human_size)
+                    .unwrap_or_else(|| "unknown size".to_string());
+                self.mount_image_row
+                    .set_subtitle(&format!("{} · {}", size, entry.mode().label()));
+                self.mount_mode_row.set_visible(entry.hybrid);
+                self.mount_mode_row
+                    .set_selected(if entry.cdrom { 0 } else { 1 });
             }
             None => {
-                self.content_title.set_title("BootDrive");
-                self.content_title.set_subtitle("");
-                self.content_stack.set_visible_child_name("empty");
+                self.mount_image_row.set_title("No image selected");
+                self.mount_image_row
+                    .set_subtitle("Add one in the Images tab");
+                self.mount_mode_row.set_visible(false);
             }
         }
 
@@ -549,11 +689,11 @@ impl Ui {
     fn refresh_controls(&self) {
         let state = *self.state.borrow();
         let busy = *self.busy.borrow();
-        let has_selection = self.selected.borrow().is_some();
+        let has_active = self.active.borrow().is_some();
         let transitioning = matches!(state, DriveState::Preparing | DriveState::Ejecting);
         let enabled = !busy && !transitioning && *self.available.borrow();
 
-        self.mode_row
+        self.mount_mode_row
             .set_sensitive(enabled && state != DriveState::Active);
 
         match state {
@@ -568,7 +708,28 @@ impl Ui {
                 self.primary_button
                     .set_css_classes(&["suggested-action", "pill"]);
                 self.primary_button
-                    .set_sensitive(enabled && has_selection && !transitioning);
+                    .set_sensitive(enabled && has_active && !transitioning);
+            }
+        }
+    }
+}
+
+fn detail_text(state: DriveState, entry: Option<&ImageEntry>) -> String {
+    match state {
+        DriveState::Unavailable => "usb-signaller is unavailable.".to_string(),
+        DriveState::Preparing => "Setting up the USB gadget…".to_string(),
+        DriveState::Ejecting => "Returning to normal USB behaviour…".to_string(),
+        DriveState::Active => match entry.map(|e| e.mode()) {
+            Some(bootdrive_common::ImageMode::Disk) => {
+                "Connected as a bootable USB disk.".to_string()
+            }
+            _ => "Connected as a bootable CD-ROM.".to_string(),
+        },
+        DriveState::Idle | DriveState::Error => {
+            if entry.is_some() {
+                "Ready to expose over USB.".to_string()
+            } else {
+                "Add and select an image to get started.".to_string()
             }
         }
     }
