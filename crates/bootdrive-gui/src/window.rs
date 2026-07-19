@@ -6,7 +6,11 @@
 //! comes from usb-signaller via [`DaemonClient`].
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
 
 use bootdrive_common::DriveState;
 use gtk4 as gtk;
@@ -14,7 +18,7 @@ use libadwaita as adw;
 
 use adw::prelude::*;
 
-use crate::library::{human_size, ImageEntry, Library};
+use crate::library::{human_size, import, ImageEntry, Library};
 use crate::usb_moded::{DaemonClient, DaemonCommand, DaemonUpdate, UnreachableReason};
 
 /// Shared UI state.
@@ -36,6 +40,7 @@ struct Ui {
 
     // Images view.
     images_list: gtk::ListBox,
+    images_group: adw::PreferencesGroup,
 
     client: DaemonClient,
     library: RefCell<Library>,
@@ -105,7 +110,7 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         .build();
     let (mount_page, mount_widgets) = mount_page();
     view_stack.add_named(&mount_page, Some(TAB_MOUNT));
-    let (images_page, images_list) = images_page(&add_button);
+    let (images_page, images_list, images_group) = images_page(&add_button);
     view_stack.add_named(&images_page, Some(TAB_IMAGES));
     view_stack.set_visible_child_name(TAB_MOUNT);
 
@@ -147,6 +152,7 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         primary_button: mount_widgets.primary_button,
         setup_status: mount_widgets.setup_status,
         images_list,
+        images_group,
         client: DaemonClient::spawn(),
         library: RefCell::new(Library::load()),
         active: RefCell::new(None),
@@ -275,9 +281,12 @@ fn mount_page() -> (gtk::Widget, MountWidgets) {
 }
 
 /// Build the Images page and return it plus the list box.
-fn images_page(add_button: &gtk::Button) -> (gtk::Widget, gtk::ListBox) {
+fn images_page(add_button: &gtk::Button) -> (gtk::Widget, gtk::ListBox, adw::PreferencesGroup) {
     let page = adw::PreferencesPage::new();
-    let group = adw::PreferencesGroup::builder().title("Images").build();
+    let group = adw::PreferencesGroup::builder()
+        .title("Images")
+        .description("Stored in BootDrive's library")
+        .build();
     group.set_header_suffix(Some(add_button));
     let list = gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::None)
@@ -285,7 +294,7 @@ fn images_page(add_button: &gtk::Button) -> (gtk::Widget, gtk::ListBox) {
         .build();
     group.add(&list);
     page.add(&group);
-    (page.upcast(), list)
+    (page.upcast(), list, group)
 }
 
 fn install_about_action(ui: &Rc<Ui>) {
@@ -412,6 +421,12 @@ fn rebuild_list(ui: &Rc<Ui>) {
         ui.images_list.remove(&child);
     }
     let lib = ui.library.borrow();
+    ui.images_group
+        .set_description(Some(&match lib.entries.len() {
+            0 => "Stored in BootDrive's library".to_string(),
+            1 => format!("1 image · {} used", human_size(lib.total_size())),
+            n => format!("{n} images · {} used", human_size(lib.total_size())),
+        }));
     if lib.entries.is_empty() {
         let placeholder = adw::ActionRow::builder()
             .title("No images yet")
@@ -512,13 +527,7 @@ fn choose_image(ui: &Rc<Ui>) {
         move |result| match result {
             Ok(file) => {
                 if let Some(path) = file.path() {
-                    let size = std::fs::metadata(&path).ok().map(|m| m.len());
-                    ui.library
-                        .borrow_mut()
-                        .add(ImageEntry::from_path(path, size));
-                    rebuild_list(&ui);
-                    let last = ui.library.borrow().entries.len().saturating_sub(1);
-                    select_active(&ui, last);
+                    start_import(&ui, path);
                 } else {
                     ui.toast("That file could not be resolved to a readable path.");
                 }
@@ -530,6 +539,120 @@ fn choose_image(ui: &Rc<Ui>) {
             }
         },
     );
+}
+
+/// Messages from the copy thread to the GTK loop.
+enum ImportMsg {
+    Progress(u64, u64),
+    Done(ImageEntry),
+    Cancelled,
+    Failed(String),
+}
+
+/// Copy `source` into the library with a progress dialog.
+fn start_import(ui: &Rc<Ui>, source: PathBuf) {
+    let name = source
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "image".to_string());
+
+    let dialog = adw::Dialog::builder()
+        .title("Importing")
+        .content_width(380)
+        .can_close(false)
+        .build();
+    let header = adw::HeaderBar::builder()
+        .show_end_title_buttons(false)
+        .show_start_title_buttons(false)
+        .build();
+    let bar = gtk::ProgressBar::builder()
+        .show_text(true)
+        .text("Preparing…")
+        .build();
+    let label = gtk::Label::builder()
+        .label(format!("Copying “{name}” into your library…"))
+        .wrap(true)
+        .justify(gtk::Justification::Center)
+        .build();
+    let cancel = gtk::Button::builder()
+        .label("Cancel")
+        .halign(gtk::Align::Center)
+        .build();
+    let body = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(16)
+        .margin_top(12)
+        .margin_bottom(24)
+        .margin_start(24)
+        .margin_end(24)
+        .build();
+    body.append(&label);
+    body.append(&bar);
+    body.append(&cancel);
+    let tv = adw::ToolbarView::new();
+    tv.add_top_bar(&header);
+    tv.set_content(Some(&body));
+    dialog.set_child(Some(&tv));
+    dialog.present(Some(&ui.window));
+
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    {
+        let cancel_flag = cancel_flag.clone();
+        cancel.connect_clicked(move |b| {
+            b.set_sensitive(false);
+            cancel_flag.store(true, Ordering::Relaxed);
+        });
+    }
+
+    let (tx, rx) = async_channel::unbounded::<ImportMsg>();
+    {
+        let cancel_flag = cancel_flag.clone();
+        thread::spawn(move || {
+            let result = import(
+                &source,
+                |(c, t)| {
+                    let _ = tx.send_blocking(ImportMsg::Progress(c, t));
+                },
+                &cancel_flag,
+            );
+            let msg = match result {
+                Ok(entry) => ImportMsg::Done(entry),
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => ImportMsg::Cancelled,
+                Err(e) => ImportMsg::Failed(e.to_string()),
+            };
+            let _ = tx.send_blocking(msg);
+        });
+    }
+
+    let ui = ui.clone();
+    glib::spawn_future_local(async move {
+        while let Ok(msg) = rx.recv().await {
+            match msg {
+                ImportMsg::Progress(c, t) => {
+                    bar.set_fraction(if t > 0 { c as f64 / t as f64 } else { 0.0 });
+                    bar.set_text(Some(&format!("{} / {}", human_size(c), human_size(t))));
+                }
+                ImportMsg::Done(entry) => {
+                    dialog.force_close();
+                    ui.library.borrow_mut().add(entry);
+                    rebuild_list(&ui);
+                    let last = ui.library.borrow().entries.len().saturating_sub(1);
+                    select_active(&ui, last);
+                    ui.toast("Added to your library.");
+                    break;
+                }
+                ImportMsg::Cancelled => {
+                    dialog.force_close();
+                    break;
+                }
+                ImportMsg::Failed(m) => {
+                    dialog.force_close();
+                    ui.toast(&format!("Import failed: {m}"));
+                    break;
+                }
+            }
+        }
+    });
 }
 
 fn remove_image(ui: &Rc<Ui>, index: usize) {
