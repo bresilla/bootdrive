@@ -79,11 +79,7 @@ pub fn load() -> Vec<Distro> {
 
     let mut distros: Vec<Distro> = by_key.into_values().collect();
     for d in &mut distros {
-        d.images.sort_by(|a, b| {
-            b.version
-                .partial_cmp(&a.version)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        d.images.sort_by(|a, b| b.version.total_cmp(&a.version));
     }
     distros.retain(|d| !d.images.is_empty());
     distros.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
