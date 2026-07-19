@@ -68,6 +68,11 @@
   </developer>
 
   <releases>
+    <release version="0.2.0" date="2026-07-19">
+      <description>
+        <p>Adds a Download tab: browse distros from osinfo-db and fetch an ISO straight into your library.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-07-18">
       <description>
         <p>First release: select one image and expose it as a bootable USB drive.</p>

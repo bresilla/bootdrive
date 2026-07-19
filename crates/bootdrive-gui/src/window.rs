@@ -487,7 +487,7 @@ fn present_about(window: &adw::ApplicationWindow) {
         .css_classes(vec!["title-1".to_string()])
         .build();
     let version = gtk::Label::builder()
-        .label("0.1.0")
+        .label("0.2.0")
         .css_classes(vec!["dim-label".to_string()])
         .margin_bottom(6)
         .build();
