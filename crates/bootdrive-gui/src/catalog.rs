@@ -82,7 +82,7 @@ pub fn load() -> Vec<Distro> {
         d.images.sort_by(|a, b| b.version.total_cmp(&a.version));
     }
     distros.retain(|d| !d.images.is_empty());
-    distros.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    distros.sort_by_key(|a| a.name.to_lowercase());
     distros
 }
 
