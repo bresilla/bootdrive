@@ -1,16 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-  <!-- Symbolic: wide phone with a USB trident, single colour. -->
-  <g fill="none" stroke="#2e3436" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="2.6" y="2.4" width="10.8" height="11.2" rx="2"/>
-    <line x1="8" y1="5.4" x2="8" y2="11"/>
-    <line x1="8" y1="7.7" x2="6.3" y2="6.3"/>
-    <line x1="8" y1="9" x2="9.7" y2="7.6"/>
+  <!-- Symbolic: USB flash drive with the USB trident, single colour. -->
+  <g fill="none" stroke="#2e3436" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="5.4" y="2.6" width="5.2" height="11" rx="1.5"/>
+    <line x1="8" y1="6.3" x2="8" y2="11.6"/>
+    <line x1="8" y1="8.2" x2="6.5" y2="7"/>
+    <line x1="8" y1="9.4" x2="9.5" y2="8.2"/>
   </g>
   <g fill="#2e3436">
-    <path d="M8 3.9 l-1.2 1.6 h2.4 z"/>
-    <circle cx="8" cy="11.3" r="1"/>
-    <circle cx="6" cy="5.9" r="0.9"/>
-    <rect x="9.4" y="6.9" width="1.7" height="1.7" rx="0.3"/>
+    <rect x="6.3" y="1" width="3.4" height="2" rx="0.5"/>
+    <path d="M8 4.8 l-1.1 1.5 h2.2 z"/>
+    <circle cx="8" cy="11.9" r="0.9"/>
+    <circle cx="6.2" cy="6.7" r="0.8"/>
+    <rect x="9.2" y="7.6" width="1.5" height="1.5" rx="0.3"/>
   </g>
 </svg>

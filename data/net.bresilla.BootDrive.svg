@@ -1,35 +1,50 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <!-- BootDrive app icon: a phone whose screen shows the USB trident.
-       Dimensional GNOME style: light from above, gradient body, glossy screen. -->
+  <!-- BootDrive app icon (GNOME Circle style, à la Impression): a USB flash
+       drive in front of an optical disc — bootable media. Dimensional: light
+       from above, gradient bodies, gloss. -->
   <defs>
-    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#75727f"/>
-      <stop offset="1" stop-color="#2b2838"/>
+    <radialGradient id="disc" cx="40%" cy="34%" r="72%">
+      <stop offset="0" stop-color="#f4f7fc"/>
+      <stop offset="0.55" stop-color="#b7c3d8"/>
+      <stop offset="1" stop-color="#8894ab"/>
+    </radialGradient>
+    <linearGradient id="usb" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#62a0ea"/>
+      <stop offset="1" stop-color="#1a5fb4"/>
     </linearGradient>
-    <linearGradient id="screen" x1="0.1" y1="0" x2="0.5" y2="1">
-      <stop offset="0" stop-color="#4a90e8"/>
-      <stop offset="1" stop-color="#7a3fb0"/>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eceae8"/>
+      <stop offset="1" stop-color="#9a9996"/>
     </linearGradient>
   </defs>
 
-  <!-- phone: dark bevel + gradient face (wide body filling the canvas) -->
-  <rect x="22" y="17" width="84" height="96" rx="16" fill="#17151f"/>
-  <rect x="22" y="14" width="84" height="96" rx="16" fill="url(#body)"/>
-  <!-- screen -->
-  <rect x="29" y="23" width="70" height="78" rx="9" fill="url(#screen)"/>
-  <!-- screen gloss + home indicator -->
-  <rect x="34" y="27" width="58" height="9" rx="4.5" fill="#ffffff" opacity="0.14"/>
-  <rect x="54" y="104" width="20" height="3.5" rx="1.75" fill="#ffffff" opacity="0.35"/>
+  <!-- Optical disc (back) -->
+  <circle cx="49" cy="57" r="41" fill="url(#disc)" stroke="#5e6473" stroke-width="1.5"/>
+  <path d="M49 18a39 39 0 0 1 30 15" fill="none" stroke="#ffffff" stroke-width="4"
+        stroke-linecap="round" opacity="0.5"/>
+  <circle cx="49" cy="57" r="14" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.45"/>
+  <circle cx="49" cy="57" r="8.5" fill="#e6eaf1" stroke="#8894ab" stroke-width="1.5"/>
+  <circle cx="49" cy="57" r="3.6" fill="#ffffff" stroke="#8894ab" stroke-width="1"/>
 
-  <!-- USB trident on the screen -->
-  <g stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <line x1="64" y1="42" x2="64" y2="84"/>
-    <line x1="64" y1="60" x2="50" y2="49"/>
-    <line x1="64" y1="68" x2="78" y2="57"/>
+  <!-- USB flash drive (front) -->
+  <!-- metal connector -->
+  <rect x="67" y="18" width="26" height="22" rx="4" fill="#6f6e6b"/>
+  <rect x="67" y="18" width="26" height="20" rx="4" fill="url(#metal)"/>
+  <rect x="73" y="24" width="14" height="6" rx="1.5" fill="#ffffff" opacity="0.55"/>
+  <!-- body: dark base (outline + front face) then gradient face -->
+  <rect x="62" y="38" width="36" height="74" rx="11" fill="#123c69"/>
+  <rect x="62" y="36" width="36" height="70" rx="11" fill="url(#usb)"/>
+  <rect x="67" y="41" width="26" height="4" rx="2" fill="#8fbdf3"/>
+
+  <!-- USB trident on the body -->
+  <g stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <line x1="80" y1="58" x2="80" y2="92"/>
+    <line x1="80" y1="72" x2="71" y2="64"/>
+    <line x1="80" y1="79" x2="89" y2="71"/>
   </g>
-  <path d="M64 34 l-7 9 h14 z" fill="#ffffff"/>
-  <circle cx="64" cy="86" r="5.5" fill="#ffffff"/>
-  <circle cx="47.5" cy="46.5" r="5" fill="#ffffff"/>
-  <rect x="74.5" y="52.5" width="8" height="8" rx="1" fill="#ffffff"/>
+  <path d="M80 52 l-5 7 h10 z" fill="#ffffff"/>
+  <circle cx="80" cy="94" r="4" fill="#ffffff"/>
+  <circle cx="69" cy="62" r="3.6" fill="#ffffff"/>
+  <rect x="87" y="67.5" width="6" height="6" rx="1" fill="#ffffff"/>
 </svg>
