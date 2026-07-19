@@ -14,12 +14,18 @@ use zbus::proxy;
     default_path = "/com/meego/usb_moded"
 )]
 trait UsbModed {
+    // usb-signaller uses snake_case D-Bus method names; pin them so zbus does
+    // not PascalCase them (which yields UnknownMethod).
+    #[zbus(name = "get_modes")]
     fn get_modes(&self) -> zbus::Result<String>;
+    #[zbus(name = "mode_request")]
     fn mode_request(&self) -> zbus::Result<String>;
+    #[zbus(name = "set_mode")]
     fn set_mode(&self, mode: &str) -> zbus::Result<String>;
+    #[zbus(name = "set_config")]
     fn set_config(&self, config: &str) -> zbus::Result<String>;
 
-    #[zbus(signal)]
+    #[zbus(signal, name = "sig_usb_event_ind")]
     fn sig_usb_event_ind(&self, event: String) -> zbus::Result<()>;
 }
 
