@@ -23,7 +23,7 @@ finish-args:
   - --device=dri
   # No host filesystem access: images are picked through the file chooser
   # portal and copied into the app's own data dir. usb-signaller (root) reads
-  # that copy at ~/.var/app/net.bresilla.BootDrive/data/…, a real path it can
+  # that copy at ~/.var/app/net.bresilla.BootDrive/data/, a real path it can
   # open, so it never needs the portal mount. (Same model as Impression, which
   # reads via the portal and drives UDisks2 over the system bus.)
   - --system-talk-name=com.meego.usb_moded

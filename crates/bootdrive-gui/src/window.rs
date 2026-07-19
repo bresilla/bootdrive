@@ -1,7 +1,7 @@
 //! The BootDrive window.
 //!
 //! An `AdwOverlaySplitView` with a hamburger-toggled sidebar of tabs:
-//! **Mount** (the main view — pick a library image and expose it over USB) and
+//! **Mount** (the main view: pick a library image and expose it over USB) and
 //! **Images** (manage the ISO library: add / remove). The two are kept
 //! separate on purpose: the Images tab never arms anything, it only manages
 //! files; choosing what to expose happens in Mount. State comes from
@@ -591,7 +591,7 @@ fn wire(ui: &Rc<Ui>, nav_list: &gtk::ListBox, add_button: &gtk::Button) {
     }
 }
 
-/// Rebuild the Images list from the library. Rows are informational only —
+/// Rebuild the Images list from the library. Rows are informational only;
 /// they never arm the Mount tab.
 fn rebuild_list(ui: &Rc<Ui>) {
     while let Some(child) = ui.images_list.first_child() {
@@ -643,7 +643,7 @@ fn rebuild_list(ui: &Rc<Ui>) {
 
 fn subtitle_for(entry: &ImageEntry) -> String {
     if !Library::exists(entry) {
-        return "missing — file not found".to_string();
+        return "missing, file not found".to_string();
     }
     let size = entry
         .size

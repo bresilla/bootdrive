@@ -1,7 +1,7 @@
 //! BootDrive's managed image library.
 //!
 //! Added images are **copied** into BootDrive's own data directory
-//! (`…/data/bootdrive/images/`, i.e. inside the Flatpak
+//! (`.../data/bootdrive/images/`, i.e. inside the Flatpak
 //! `~/.var/app/net.bresilla.BootDrive/data/bootdrive/images/`). That gives a
 //! stable path the root usb-signaller can always read, and means the image
 //! survives the original being moved or unplugged. The index is a JSON file

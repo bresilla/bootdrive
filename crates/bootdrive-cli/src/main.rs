@@ -1,4 +1,4 @@
-//! `bootdrive` — the command-line frontend.
+//! The `bootdrive` command-line frontend.
 //!
 //! Drives postmarketOS's `usb-signaller` directly over `com.meego.usb_moded`
 //! (with the `mass_storage_mode` our patch adds). No BootDrive daemon involved.
@@ -86,14 +86,14 @@ async fn main() -> Result<()> {
                 if supported {
                     "yes"
                 } else {
-                    "NO — install the patched usb-signaller"
+                    "NO (install the patched usb-signaller)"
                 }
             );
         }
         Command::Expose { image, cdrom, disk } => {
             let modes = proxy.get_modes().await.unwrap_or_default();
             if !modes.split(',').any(|m| m == MODE_MASS_STORAGE) {
-                bail!("usb-signaller has no '{MODE_MASS_STORAGE}' — install the patched build");
+                bail!("usb-signaller has no '{MODE_MASS_STORAGE}'; install the patched build");
             }
             let path = std::fs::canonicalize(&image)
                 .with_context(|| format!("no such file: {}", image.display()))?;
@@ -124,7 +124,7 @@ async fn main() -> Result<()> {
             if result == MODE_MASS_STORAGE {
                 println!("Exposing {} as {}.", path.display(), mode.label());
             } else {
-                bail!("usb-signaller stayed in '{result}' — check its logs");
+                bail!("usb-signaller stayed in '{result}', check its logs");
             }
         }
         Command::Eject => {

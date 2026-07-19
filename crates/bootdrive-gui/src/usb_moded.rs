@@ -216,7 +216,7 @@ async fn worker(
                     Ok(other) => {
                         let _ = updates
                             .send(DaemonUpdate::Error {
-                                message: format!("USB stayed in '{other}' — check usb-signaller"),
+                                message: format!("USB stayed in '{other}', check usb-signaller"),
                             })
                             .await;
                     }

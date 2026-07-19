@@ -1,4 +1,4 @@
-//! The small state model the frontends share. Plain enums — the wire format is
+//! The small state model the frontends share. Plain enums; the wire format is
 //! `usb-signaller`'s mode strings, so nothing here needs (de)serialization.
 
 use std::str::FromStr;
