@@ -1,45 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <!-- BootDrive app icon (GNOME HIG / Circle style). A dimensional media disc
-       filling the canvas with a bold play/boot mark ( |> ). Beveled raised
-       edge (light from above), gradient face, glossy sheen. -->
+  <!-- BootDrive app icon: a phone whose screen shows the USB trident — the
+       phone becomes a USB drive. Dimensional GNOME style: light from above,
+       gradient body, glossy screen. -->
   <defs>
-    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#b6ccf6"/>
-      <stop offset="1" stop-color="#173f74"/>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#75727f"/>
+      <stop offset="1" stop-color="#2b2838"/>
     </linearGradient>
-    <linearGradient id="face" x1="0" y1="0" x2="0.3" y2="1">
+    <linearGradient id="screen" x1="0.1" y1="0" x2="0.5" y2="1">
       <stop offset="0" stop-color="#4a90e8"/>
       <stop offset="1" stop-color="#7a3fb0"/>
     </linearGradient>
-    <radialGradient id="sheen" cx="38%" cy="30%" r="60%">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.5"/>
-      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="hub" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#6aa6ee"/>
-      <stop offset="1" stop-color="#5330a0"/>
-    </linearGradient>
   </defs>
 
-  <!-- raised beveled edge -->
-  <circle cx="64" cy="64" r="56" fill="url(#rim)"/>
-  <!-- disc face -->
-  <circle cx="64" cy="64" r="49" fill="url(#face)"/>
-  <!-- concentric grooves -->
-  <circle cx="64" cy="64" r="45" fill="none" stroke="#ffffff" stroke-opacity="0.14" stroke-width="1.5"/>
-  <circle cx="64" cy="64" r="36" fill="none" stroke="#1a2f6b" stroke-opacity="0.18" stroke-width="1.5"/>
-  <!-- glossy sheen -->
-  <circle cx="64" cy="64" r="49" fill="url(#sheen)"/>
-  <!-- raised centre hub -->
-  <circle cx="64" cy="64" r="31" fill="url(#hub)"/>
-  <circle cx="64" cy="64" r="31" fill="none" stroke="#3a2270" stroke-opacity="0.5" stroke-width="1.5"/>
+  <!-- phone: dark bevel + gradient face -->
+  <rect x="37" y="11" width="54" height="112" rx="17" fill="#17151f"/>
+  <rect x="37" y="8" width="54" height="110" rx="17" fill="url(#body)"/>
+  <!-- screen -->
+  <rect x="43" y="16" width="42" height="90" rx="8" fill="url(#screen)"/>
+  <!-- screen gloss + home indicator -->
+  <rect x="47" y="20" width="34" height="9" rx="4.5" fill="#ffffff" opacity="0.14"/>
+  <rect x="56" y="110" width="16" height="3" rx="1.5" fill="#ffffff" opacity="0.35"/>
 
-  <!-- |>  play / boot mark -->
-  <g>
-    <rect x="47" y="52" width="9" height="24" rx="4.5" fill="#0e1b4d" opacity="0.25" transform="translate(0,2)"/>
-    <path d="M61 51 L84 64 L61 77 Z" fill="#0e1b4d" opacity="0.25" transform="translate(0,2)"/>
-    <rect x="47" y="52" width="9" height="24" rx="4.5" fill="#ffffff"/>
-    <path d="M61 51 L84 64 L61 77 Z" fill="#ffffff" stroke="#ffffff" stroke-width="5" stroke-linejoin="round"/>
+  <!-- USB trident on the screen -->
+  <g stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <line x1="64" y1="40" x2="64" y2="82"/>
+    <line x1="64" y1="58" x2="53" y2="48"/>
+    <line x1="64" y1="66" x2="75" y2="56"/>
   </g>
+  <path d="M64 33 l-6 8 h12 z" fill="#ffffff"/>
+  <circle cx="64" cy="84" r="5" fill="#ffffff"/>
+  <circle cx="51" cy="46" r="4.5" fill="#ffffff"/>
+  <rect x="71.5" y="51.5" width="7.5" height="7.5" rx="1" fill="#ffffff"/>
 </svg>

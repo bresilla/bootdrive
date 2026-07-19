@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
-  <!-- Symbolic variant: |> play / boot mark, single colour. -->
+  <!-- Symbolic: phone with a USB trident, single colour. -->
+  <g fill="none" stroke="#2e3436" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4.6" y="1.2" width="6.8" height="13.6" rx="2"/>
+    <line x1="8" y1="5.2" x2="8" y2="11"/>
+    <line x1="8" y1="7.6" x2="6.4" y2="6.2"/>
+    <line x1="8" y1="9" x2="9.6" y2="7.6"/>
+  </g>
   <g fill="#2e3436">
-    <rect x="4" y="4.5" width="2.2" height="7" rx="1.1"/>
-    <path d="M7.6 4.5 L12.2 8 L7.6 11.5 Z" stroke="#2e3436" stroke-width="1.2"
-          stroke-linejoin="round"/>
+    <path d="M8 3.6 l-1.2 1.7 h2.4 z"/>
+    <circle cx="8" cy="11.3" r="1"/>
+    <circle cx="6.1" cy="5.8" r="0.9"/>
+    <rect x="9.3" y="6.9" width="1.7" height="1.7" rx="0.3"/>
   </g>
 </svg>
