@@ -252,15 +252,18 @@ fn mount_page() -> (gtk::Widget, MountWidgets) {
         .build();
     let badge = gtk::Box::builder()
         .halign(gtk::Align::Center)
+        .valign(gtk::Align::Center)
+        .hexpand(false)
+        .vexpand(false)
+        .width_request(92)
+        .height_request(92)
         .css_classes(vec!["bd-badge".to_string()])
         .build();
-    badge.set_size_request(92, 92);
     let badge_icon = gtk::Image::from_icon_name("drive-removable-media-symbolic");
     badge_icon.set_pixel_size(46);
-    badge_icon.set_hexpand(true);
-    badge_icon.set_vexpand(true);
     badge_icon.set_halign(gtk::Align::Center);
     badge_icon.set_valign(gtk::Align::Center);
+    badge_icon.set_hexpand(true);
     badge.append(&badge_icon);
     let status_title = gtk::Label::builder()
         .halign(gtk::Align::Center)
