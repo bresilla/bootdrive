@@ -1,9 +1,11 @@
 //! The BootDrive window.
 //!
 //! An `AdwOverlaySplitView` with a hamburger-toggled sidebar of tabs:
-//! **Mount** (the main view — USB status + expose/eject) and **Images** (the
-//! ISO library). Adaptive: on the phone the sidebar becomes an overlay. State
-//! comes from usb-signaller via [`DaemonClient`].
+//! **Mount** (the main view — pick a library image and expose it over USB) and
+//! **Images** (manage the ISO library: add / remove). The two are kept
+//! separate on purpose: the Images tab never arms anything, it only manages
+//! files; choosing what to expose happens in Mount. State comes from
+//! usb-signaller via [`DaemonClient`].
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -21,6 +23,32 @@ use adw::prelude::*;
 use crate::library::{human_size, import, ImageEntry, Library};
 use crate::usb_moded::{DaemonClient, DaemonCommand, DaemonUpdate, UnreachableReason};
 
+/// A little accent stylesheet so the app isn't all grey.
+const CSS: &str = "
+.bd-hero {
+  padding: 24px 18px;
+  border-radius: 22px;
+  background: alpha(@window_fg_color, 0.045);
+}
+.bd-hero.busy   { background: alpha(@accent_bg_color, 0.14); }
+.bd-hero.active { background: alpha(@success_color, 0.14); }
+.bd-hero.error  { background: alpha(@error_color, 0.13); }
+
+.bd-badge {
+  border-radius: 999px;
+  background: alpha(@window_fg_color, 0.09);
+  color: @window_fg_color;
+}
+.bd-badge.busy   { background: alpha(@accent_bg_color, 0.22); color: @accent_fg_color; }
+.bd-badge.active { background: alpha(@success_color, 0.24); color: @success_color; }
+.bd-badge.error  { background: alpha(@error_color, 0.22);  color: @error_color; }
+
+.bd-hero-title { font-weight: 800; font-size: 1.35rem; }
+
+.bd-cd   { color: @accent_color; }
+.bd-disk { color: @success_color; }
+";
+
 /// Shared UI state.
 struct Ui {
     window: adw::ApplicationWindow,
@@ -31,10 +59,13 @@ struct Ui {
 
     // Mount view.
     mount_stack: gtk::Stack,
-    mount_status_title: gtk::Label,
-    mount_status_detail: gtk::Label,
-    mount_image_row: adw::ActionRow,
-    mount_mode_row: adw::ComboRow,
+    hero: gtk::Box,
+    badge: gtk::Box,
+    badge_icon: gtk::Image,
+    status_title: gtk::Label,
+    status_detail: gtk::Label,
+    image_row: adw::ActionRow,
+    mode_row: adw::ComboRow,
     primary_button: gtk::Button,
     setup_status: adw::StatusPage,
 
@@ -55,6 +86,8 @@ const TAB_IMAGES: &str = "images";
 
 /// Build and present the main window.
 pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
+    load_css();
+
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("BootDrive")
@@ -145,10 +178,13 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
         content_title,
         view_stack,
         mount_stack: mount_widgets.stack,
-        mount_status_title: mount_widgets.status_title,
-        mount_status_detail: mount_widgets.status_detail,
-        mount_image_row: mount_widgets.image_row,
-        mount_mode_row: mount_widgets.mode_row,
+        hero: mount_widgets.hero,
+        badge: mount_widgets.badge,
+        badge_icon: mount_widgets.badge_icon,
+        status_title: mount_widgets.status_title,
+        status_detail: mount_widgets.status_detail,
+        image_row: mount_widgets.image_row,
+        mode_row: mount_widgets.mode_row,
         primary_button: mount_widgets.primary_button,
         setup_status: mount_widgets.setup_status,
         images_list,
@@ -172,6 +208,18 @@ pub fn build(app: &adw::Application) -> adw::ApplicationWindow {
     window
 }
 
+fn load_css() {
+    let provider = gtk::CssProvider::new();
+    provider.load_from_data(CSS);
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+}
+
 fn nav_row(title: &str, icon: &str) -> adw::ActionRow {
     let row = adw::ActionRow::builder().title(title).build();
     row.add_prefix(&gtk::Image::from_icon_name(icon));
@@ -181,6 +229,9 @@ fn nav_row(title: &str, icon: &str) -> adw::ActionRow {
 /// Widgets we keep from the Mount page.
 struct MountWidgets {
     stack: gtk::Stack,
+    hero: gtk::Box,
+    badge: gtk::Box,
+    badge_icon: gtk::Image,
     status_title: gtk::Label,
     status_detail: gtk::Label,
     image_row: adw::ActionRow,
@@ -193,38 +244,53 @@ struct MountWidgets {
 fn mount_page() -> (gtk::Widget, MountWidgets) {
     let page = adw::PreferencesPage::new();
 
-    // USB status group.
-    let status_group = adw::PreferencesGroup::new();
-    let status_box = gtk::Box::builder()
+    // Colored status hero.
+    let hero = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
-        .spacing(4)
-        .margin_top(4)
-        .margin_bottom(4)
+        .spacing(12)
+        .css_classes(vec!["bd-hero".to_string()])
         .build();
+    let badge = gtk::Box::builder()
+        .halign(gtk::Align::Center)
+        .css_classes(vec!["bd-badge".to_string()])
+        .build();
+    badge.set_size_request(92, 92);
+    let badge_icon = gtk::Image::from_icon_name("drive-removable-media-symbolic");
+    badge_icon.set_pixel_size(46);
+    badge_icon.set_hexpand(true);
+    badge_icon.set_vexpand(true);
+    badge_icon.set_halign(gtk::Align::Center);
+    badge_icon.set_valign(gtk::Align::Center);
+    badge.append(&badge_icon);
     let status_title = gtk::Label::builder()
-        .halign(gtk::Align::Start)
-        .css_classes(vec!["title-1".to_string()])
+        .halign(gtk::Align::Center)
+        .css_classes(vec!["bd-hero-title".to_string()])
         .label("Connecting…")
         .build();
     let status_detail = gtk::Label::builder()
-        .halign(gtk::Align::Start)
+        .halign(gtk::Align::Center)
+        .justify(gtk::Justification::Center)
         .wrap(true)
         .css_classes(vec!["dim-label".to_string()])
         .label("")
         .build();
-    status_box.append(&status_title);
-    status_box.append(&status_detail);
-    status_group.add(&status_box);
+    hero.append(&badge);
+    hero.append(&status_title);
+    hero.append(&status_detail);
+    let hero_group = adw::PreferencesGroup::new();
+    hero_group.add(&hero);
 
-    // Selected image group.
+    // Image selection group (this is where you pick from the library).
     let image_group = adw::PreferencesGroup::builder().title("Image").build();
     let image_row = adw::ActionRow::builder()
-        .title("No image selected")
-        .subtitle("Add one in the Images tab")
+        .title("Choose an image")
+        .subtitle("Pick one from your library")
+        .activatable(true)
         .build();
     image_row.add_prefix(&gtk::Image::from_icon_name(
         "drive-removable-media-symbolic",
     ));
+    image_row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
     let mode_model = gtk::StringList::new(&["USB CD-ROM", "USB disk"]);
     let mode_row = adw::ComboRow::builder()
         .title("Exposure mode")
@@ -236,7 +302,7 @@ fn mount_page() -> (gtk::Widget, MountWidgets) {
 
     // Action button.
     let primary_button = gtk::Button::builder()
-        .label("Expose over USB")
+        .label("Choose an image")
         .css_classes(vec!["suggested-action".to_string(), "pill".to_string()])
         .halign(gtk::Align::Center)
         .margin_top(6)
@@ -249,7 +315,7 @@ fn mount_page() -> (gtk::Widget, MountWidgets) {
             .build(),
     );
 
-    page.add(&status_group);
+    page.add(&hero_group);
     page.add(&image_group);
     page.add(&button_group);
 
@@ -270,6 +336,9 @@ fn mount_page() -> (gtk::Widget, MountWidgets) {
         stack.clone().upcast(),
         MountWidgets {
             stack,
+            hero,
+            badge,
+            badge_icon,
             status_title,
             status_detail,
             image_row,
@@ -280,7 +349,7 @@ fn mount_page() -> (gtk::Widget, MountWidgets) {
     )
 }
 
-/// Build the Images page and return it plus the list box.
+/// Build the Images page (management only) and return it plus the list box.
 fn images_page(add_button: &gtk::Button) -> (gtk::Widget, gtk::ListBox, adw::PreferencesGroup) {
     let page = adw::PreferencesPage::new();
     let group = adw::PreferencesGroup::builder()
@@ -381,15 +450,21 @@ fn wire(ui: &Rc<Ui>, nav_list: &gtk::ListBox, add_button: &gtk::Button) {
             }
         });
     }
-    // Add image.
+    // Add image (from the Images tab: manage only, do not arm it).
     {
         let ui = ui.clone();
-        add_button.connect_clicked(move |_| choose_image(&ui));
+        add_button.connect_clicked(move |_| choose_image(&ui, false));
+    }
+    // Tapping the image row in Mount opens the library picker.
+    {
+        let ui = ui.clone();
+        let row = ui.image_row.clone();
+        row.connect_activated(move |_| choose_active(&ui));
     }
     // Mode combo.
     {
         let ui = ui.clone();
-        let row = ui.mount_mode_row.clone();
+        let row = ui.mode_row.clone();
         row.connect_selected_notify(move |row| {
             if let Some(i) = *ui.active.borrow() {
                 let mut lib = ui.library.borrow_mut();
@@ -400,7 +475,7 @@ fn wire(ui: &Rc<Ui>, nav_list: &gtk::ListBox, add_button: &gtk::Button) {
             }
         });
     }
-    // Expose / eject.
+    // Primary button: pick → expose → eject depending on state.
     {
         let ui = ui.clone();
         let button = ui.primary_button.clone();
@@ -408,14 +483,21 @@ fn wire(ui: &Rc<Ui>, nav_list: &gtk::ListBox, add_button: &gtk::Button) {
             let state = *ui.state.borrow();
             match state {
                 DriveState::Active => confirm_and_eject(&ui),
-                DriveState::Idle | DriveState::Error => activate(&ui),
+                DriveState::Idle | DriveState::Error => {
+                    if ui.active.borrow().is_none() {
+                        choose_active(&ui);
+                    } else {
+                        activate(&ui);
+                    }
+                }
                 _ => {}
             }
         });
     }
 }
 
-/// Rebuild the Images list from the library.
+/// Rebuild the Images list from the library. Rows are informational only —
+/// they never arm the Mount tab.
 fn rebuild_list(ui: &Rc<Ui>) {
     while let Some(child) = ui.images_list.first_child() {
         ui.images_list.remove(&child);
@@ -436,21 +518,18 @@ fn rebuild_list(ui: &Rc<Ui>) {
         ui.images_list.append(&placeholder);
         return;
     }
-    let active = *ui.active.borrow();
     for (i, entry) in lib.entries.iter().enumerate() {
         let row = adw::ActionRow::builder()
             .title(&entry.display_name)
             .subtitle(subtitle_for(entry))
-            .activatable(true)
             .build();
-        row.add_prefix(&gtk::Image::from_icon_name(if entry.cdrom {
+        let icon = gtk::Image::from_icon_name(if entry.cdrom {
             "media-optical-symbolic"
         } else {
             "drive-harddisk-symbolic"
-        }));
-        if Some(i) == active {
-            row.add_suffix(&gtk::Image::from_icon_name("object-select-symbolic"));
-        }
+        });
+        icon.add_css_class(if entry.cdrom { "bd-cd" } else { "bd-disk" });
+        row.add_prefix(&icon);
         if !Library::exists(entry) {
             row.add_css_class("dim-label");
         }
@@ -461,21 +540,7 @@ fn rebuild_list(ui: &Rc<Ui>) {
         row.add_suffix(&remove_btn);
         {
             let ui = ui.clone();
-            let row_weak = row.downgrade();
-            remove_btn.connect_clicked(move |_| {
-                if let Some(row) = row_weak.upgrade() {
-                    remove_image(&ui, row.index() as usize);
-                }
-            });
-        }
-        {
-            let ui = ui.clone();
-            let row_weak = row.downgrade();
-            row.connect_activated(move |_| {
-                if let Some(row) = row_weak.upgrade() {
-                    select_active(&ui, row.index() as usize);
-                }
-            });
+            remove_btn.connect_clicked(move |_| remove_image(&ui, i));
         }
         ui.images_list.append(&row);
     }
@@ -492,19 +557,99 @@ fn subtitle_for(entry: &ImageEntry) -> String {
     format!("{} · {}", size, entry.mode().label())
 }
 
-/// Make the image at `index` the active one and jump to the Mount tab.
+/// Open a dialog to pick which library image the Mount tab should expose.
+fn choose_active(ui: &Rc<Ui>) {
+    let dialog = adw::Dialog::builder()
+        .title("Choose an image")
+        .content_width(420)
+        .content_height(480)
+        .build();
+    let header = adw::HeaderBar::new();
+    let tv = adw::ToolbarView::new();
+    tv.add_top_bar(&header);
+
+    let lib = ui.library.borrow();
+    if lib.entries.is_empty() {
+        let status = adw::StatusPage::builder()
+            .icon_name("drive-removable-media-symbolic")
+            .title("No images yet")
+            .description("Add a disk image to expose it over USB.")
+            .build();
+        let add = gtk::Button::builder()
+            .label("Add an image…")
+            .halign(gtk::Align::Center)
+            .css_classes(vec!["suggested-action".to_string(), "pill".to_string()])
+            .build();
+        {
+            let ui = ui.clone();
+            let dialog = dialog.clone();
+            add.connect_clicked(move |_| {
+                dialog.close();
+                choose_image(&ui, true);
+            });
+        }
+        status.set_child(Some(&add));
+        tv.set_content(Some(&status));
+        dialog.set_child(Some(&tv));
+        dialog.present(Some(&ui.window));
+        return;
+    }
+
+    let list = gtk::ListBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .css_classes(vec!["boxed-list".to_string()])
+        .build();
+    let active = *ui.active.borrow();
+    for (i, entry) in lib.entries.iter().enumerate() {
+        let row = adw::ActionRow::builder()
+            .title(&entry.display_name)
+            .subtitle(subtitle_for(entry))
+            .activatable(true)
+            .build();
+        let icon = gtk::Image::from_icon_name(if entry.cdrom {
+            "media-optical-symbolic"
+        } else {
+            "drive-harddisk-symbolic"
+        });
+        icon.add_css_class(if entry.cdrom { "bd-cd" } else { "bd-disk" });
+        row.add_prefix(&icon);
+        if Some(i) == active {
+            let check = gtk::Image::from_icon_name("object-select-symbolic");
+            check.add_css_class("accent");
+            row.add_suffix(&check);
+        }
+        row.set_sensitive(Library::exists(entry));
+        {
+            let ui = ui.clone();
+            let dialog = dialog.clone();
+            row.connect_activated(move |_| {
+                select_active(&ui, i);
+                dialog.close();
+            });
+        }
+        list.append(&row);
+    }
+
+    let group = adw::PreferencesGroup::new();
+    group.add(&list);
+    let clamped = adw::PreferencesPage::new();
+    clamped.add(&group);
+    tv.set_content(Some(&clamped));
+    dialog.set_child(Some(&tv));
+    dialog.present(Some(&ui.window));
+}
+
+/// Make the image at `index` the one Mount will expose.
 fn select_active(ui: &Rc<Ui>, index: usize) {
     if index >= ui.library.borrow().entries.len() {
         return;
     }
     *ui.active.borrow_mut() = Some(index);
-    ui.view_stack.set_visible_child_name(TAB_MOUNT);
-    ui.content_title.set_title("Mount");
     rebuild_list(ui);
     ui.refresh();
 }
 
-fn choose_image(ui: &Rc<Ui>) {
+fn choose_image(ui: &Rc<Ui>, select_after: bool) {
     let filter = gtk::FileFilter::new();
     filter.set_name(Some("Disk images"));
     for pat in ["*.iso", "*.img", "*.raw"] {
@@ -527,7 +672,7 @@ fn choose_image(ui: &Rc<Ui>) {
         move |result| match result {
             Ok(file) => {
                 if let Some(path) = file.path() {
-                    start_import(&ui, path);
+                    start_import(&ui, path, select_after);
                 } else {
                     ui.toast("That file could not be resolved to a readable path.");
                 }
@@ -549,8 +694,9 @@ enum ImportMsg {
     Failed(String),
 }
 
-/// Copy `source` into the library with a progress dialog.
-fn start_import(ui: &Rc<Ui>, source: PathBuf) {
+/// Copy `source` into the library with a progress dialog. When `select_after`
+/// is set, the imported image is also made the Mount selection.
+fn start_import(ui: &Rc<Ui>, source: PathBuf, select_after: bool) {
     let name = source
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -636,8 +782,10 @@ fn start_import(ui: &Rc<Ui>, source: PathBuf) {
                     dialog.force_close();
                     ui.library.borrow_mut().add(entry);
                     rebuild_list(&ui);
-                    let last = ui.library.borrow().entries.len().saturating_sub(1);
-                    select_active(&ui, last);
+                    if select_after {
+                        let last = ui.library.borrow().entries.len().saturating_sub(1);
+                        select_active(&ui, last);
+                    }
                     ui.toast("Added to your library.");
                     break;
                 }
@@ -671,7 +819,7 @@ fn remove_image(ui: &Rc<Ui>, index: usize) {
 
 fn activate(ui: &Rc<Ui>) {
     let Some(i) = *ui.active.borrow() else {
-        ui.toast("Select an image first.");
+        ui.toast("Choose an image first.");
         return;
     };
     let entry = ui.library.borrow().entries.get(i).cloned();
@@ -767,6 +915,23 @@ impl Ui {
         self.mount_stack.set_visible_child_name("setup");
     }
 
+    /// Paint the hero/badge for the current state.
+    fn apply_state_style(&self, kind: &str, icon: &str) {
+        let hero = if kind == "idle" || kind == "off" {
+            vec!["bd-hero".to_string()]
+        } else {
+            vec!["bd-hero".to_string(), kind.to_string()]
+        };
+        self.hero.set_css_classes(&hero.iter().map(String::as_str).collect::<Vec<_>>());
+        let badge = if kind == "idle" || kind == "off" {
+            vec!["bd-badge"]
+        } else {
+            vec!["bd-badge", kind]
+        };
+        self.badge.set_css_classes(&badge);
+        self.badge_icon.set_icon_name(Some(icon));
+    }
+
     fn refresh(&self) {
         let state = *self.state.borrow();
         let available = *self.available.borrow();
@@ -777,32 +942,40 @@ impl Ui {
         }
         self.mount_stack.set_visible_child_name("ready");
 
-        self.mount_status_title.set_text(state.headline());
+        self.status_title.set_text(state.headline());
 
         let active = *self.active.borrow();
         let entry = active.and_then(|i| self.library.borrow().entries.get(i).cloned());
 
-        self.mount_status_detail
+        self.status_detail
             .set_text(&detail_text(state, entry.as_ref()));
+
+        let (kind, icon) = match state {
+            DriveState::Preparing | DriveState::Ejecting => {
+                ("busy", "content-loading-symbolic")
+            }
+            DriveState::Active => ("active", "object-select-symbolic"),
+            DriveState::Error => ("error", "dialog-warning-symbolic"),
+            _ => ("idle", "drive-removable-media-symbolic"),
+        };
+        self.apply_state_style(kind, icon);
 
         match entry {
             Some(entry) => {
-                self.mount_image_row.set_title(&entry.display_name);
+                self.image_row.set_title(&entry.display_name);
                 let size = entry
                     .size
                     .map(human_size)
                     .unwrap_or_else(|| "unknown size".to_string());
-                self.mount_image_row
+                self.image_row
                     .set_subtitle(&format!("{} · {}", size, entry.mode().label()));
-                self.mount_mode_row.set_visible(entry.hybrid);
-                self.mount_mode_row
-                    .set_selected(if entry.cdrom { 0 } else { 1 });
+                self.mode_row.set_visible(entry.hybrid);
+                self.mode_row.set_selected(if entry.cdrom { 0 } else { 1 });
             }
             None => {
-                self.mount_image_row.set_title("No image selected");
-                self.mount_image_row
-                    .set_subtitle("Add one in the Images tab");
-                self.mount_mode_row.set_visible(false);
+                self.image_row.set_title("Choose an image");
+                self.image_row.set_subtitle("Pick one from your library");
+                self.mode_row.set_visible(false);
             }
         }
 
@@ -816,7 +989,7 @@ impl Ui {
         let transitioning = matches!(state, DriveState::Preparing | DriveState::Ejecting);
         let enabled = !busy && !transitioning && *self.available.borrow();
 
-        self.mount_mode_row
+        self.mode_row
             .set_sensitive(enabled && state != DriveState::Active);
 
         match state {
@@ -826,12 +999,17 @@ impl Ui {
                     .set_css_classes(&["destructive-action", "pill"]);
                 self.primary_button.set_sensitive(enabled);
             }
+            _ if !has_active => {
+                self.primary_button.set_label("Choose an image");
+                self.primary_button
+                    .set_css_classes(&["suggested-action", "pill"]);
+                self.primary_button.set_sensitive(enabled);
+            }
             _ => {
                 self.primary_button.set_label("Expose over USB");
                 self.primary_button
                     .set_css_classes(&["suggested-action", "pill"]);
-                self.primary_button
-                    .set_sensitive(enabled && has_active && !transitioning);
+                self.primary_button.set_sensitive(enabled && !transitioning);
             }
         }
     }
@@ -852,7 +1030,7 @@ fn detail_text(state: DriveState, entry: Option<&ImageEntry>) -> String {
             if entry.is_some() {
                 "Ready to expose over USB.".to_string()
             } else {
-                "Add and select an image to get started.".to_string()
+                "Choose an image to get started.".to_string()
             }
         }
     }
