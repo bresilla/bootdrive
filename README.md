@@ -82,6 +82,27 @@ says no USB service is available.
    USB mass-storage gadget at the image, read-only.
 4. Eject removes the gadget and hands the USB port back to normal use.
 
+### Why a symlink instead of just setting the path
+
+usb-signaller keeps no runtime state on purpose: the image it exposes comes only
+from its config file (`[mass_storage] storage_path`), and there is no D-Bus call
+to change that path while it runs. That config lives in root-owned locations
+(`/etc`, `/usr/lib`, `/var/run`), so a sandboxed app cannot write it either.
+
+That leaves no direct way for BootDrive to say "now expose *this* file". The fix
+is one level of indirection:
+
+- At install, the config is written **once** to point `storage_path` at a fixed
+  path inside BootDrive's own data directory (`.../bootdrive/current.img`).
+- To expose an image, BootDrive re-points that **symlink** at the chosen file.
+  It owns that directory, so this needs no root and no config change.
+- usb-signaller follows the symlink at mode-switch time and reads whatever
+  BootDrive aimed it at.
+
+So the runtime choice still happens; it just happens by moving a symlink rather
+than by telling usb-signaller a new path. usb-signaller stays stateless, and
+BootDrive never needs a privileged write.
+
 The Download tab reads [osinfo-db](https://gitlab.com/libosinfo/osinfo-db), the
 same OS database GNOME Boxes uses, so you can grab an ISO from a long list of
 distros without leaving the app.
