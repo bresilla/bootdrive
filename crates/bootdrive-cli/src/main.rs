@@ -1,10 +1,10 @@
 //! The `bootdrive` command-line frontend.
 //!
-//! Drives postmarketOS's `usb-signaller` directly over `com.meego.usb_moded`
-//! (with the `mass_storage_mode` our patch adds). No BootDrive daemon involved.
+//! Drives postmarketOS's `usb-signaller` directly over `com.meego.usb_moded`.
+//! No BootDrive daemon involved.
 
 use anyhow::{bail, Context, Result};
-use bootdrive_common::{ImageMode, MODE_MASS_STORAGE, MODE_NORMAL};
+use bootdrive_common::{point_current_image, ImageMode, MODE_NORMAL};
 use clap::{Parser, Subcommand};
 use zbus::proxy;
 
@@ -22,8 +22,6 @@ trait UsbModed {
     fn mode_request(&self) -> zbus::Result<String>;
     #[zbus(name = "set_mode")]
     fn set_mode(&self, mode: &str) -> zbus::Result<String>;
-    #[zbus(name = "set_config")]
-    fn set_config(&self, config: &str) -> zbus::Result<String>;
 
     #[zbus(signal, name = "sig_usb_event_ind")]
     fn sig_usb_event_ind(&self, event: String) -> zbus::Result<()>;
@@ -78,23 +76,9 @@ async fn main() -> Result<()> {
     match cli.command {
         Command::Status => {
             let mode = proxy.mode_request().await.context("mode_request failed")?;
-            let modes = proxy.get_modes().await.unwrap_or_default();
-            let supported = modes.split(',').any(|m| m == MODE_MASS_STORAGE);
-            println!("Mode:  {mode}");
-            println!(
-                "Mass-storage support: {}",
-                if supported {
-                    "yes"
-                } else {
-                    "NO (install the patched usb-signaller)"
-                }
-            );
+            println!("Mode: {mode}");
         }
         Command::Expose { image, cdrom, disk } => {
-            let modes = proxy.get_modes().await.unwrap_or_default();
-            if !modes.split(',').any(|m| m == MODE_MASS_STORAGE) {
-                bail!("usb-signaller has no '{MODE_MASS_STORAGE}'; install the patched build");
-            }
             let path = std::fs::canonicalize(&image)
                 .with_context(|| format!("no such file: {}", image.display()))?;
             let mode = if cdrom {
@@ -108,20 +92,15 @@ async fn main() -> Result<()> {
                     .unwrap_or_default();
                 ImageMode::default_for_extension(&ext)
             };
-            let config = format!(
-                "image={},cdrom={}",
-                path.to_string_lossy(),
-                mode.cdrom_flag()
-            );
-            proxy
-                .set_config(&config)
-                .await
-                .context("set_config failed")?;
+            // usb-signaller reads the image from its configured storage_path,
+            // which points at the current-image symlink; aim it at this file.
+            point_current_image(&path).context("could not update the current image link")?;
+            let target_mode = mode.mode_str();
             let result = proxy
-                .set_mode(MODE_MASS_STORAGE)
+                .set_mode(target_mode)
                 .await
                 .context("set_mode failed")?;
-            if result == MODE_MASS_STORAGE {
+            if result == target_mode {
                 println!("Exposing {} as {}.", path.display(), mode.label());
             } else {
                 bail!("usb-signaller stayed in '{result}', check its logs");

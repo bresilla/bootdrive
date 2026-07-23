@@ -33,15 +33,26 @@ ssh $SSH_OPTS -t "$HOST" '
 set -e
 STAGED="$HOME/usb-signaller.patched"
 CONF="$HOME/zz-bootdrive-usb-moded.conf"
+# Write the usb-signaller config as the user (with $HOME expanded), then let
+# sudo install it. storage_path points at BootDrive'"'"'s current-image symlink;
+# BootDrive re-points that symlink at whatever image you expose.
+cat > "$HOME/usb-signaller.toml" <<EOF
+[main]
+default_mode = "developer_mode"
+
+[mass_storage]
+storage_path = "$HOME/.var/app/net.bresilla.BootDrive/data/bootdrive/current.img"
+EOF
 sudo sh -c "
   [ -e /usr/bin/usb-signaller.orig ] || cp -a /usr/bin/usb-signaller /usr/bin/usb-signaller.orig
   install -m755 \"$STAGED\" /usr/bin/usb-signaller
   install -m644 \"$CONF\" /usr/share/dbus-1/system.d/zz-bootdrive-usb-moded.conf
+  install -Dm644 \"$HOME/usb-signaller.toml\" /etc/usb-signaller/usb-signaller.toml
   systemctl restart usb-signaller
   systemctl reload dbus || systemctl restart dbus || true
 "
 sleep 1
-echo "--- supported modes now (expect mass_storage_mode): ---"
-busctl call com.meego.usb_moded /com/meego/usb_moded com.meego.usb_moded get_modes
+echo "--- current mode (mass_storage_mode/cdrom_mode are unadvertised but work): ---"
+busctl call com.meego.usb_moded /com/meego/usb_moded com.meego.usb_moded mode_request
 '
 echo "==> done. (stock binary backed up at /usr/bin/usb-signaller.orig on the phone)"

@@ -14,11 +14,11 @@ pub enum ImageMode {
 }
 
 impl ImageMode {
-    /// Value passed to usb-signaller's `set_config` (`cdrom=1`/`cdrom=0`).
-    pub const fn cdrom_flag(self) -> &'static str {
+    /// The usb-signaller mode that exposes an image this way.
+    pub const fn mode_str(self) -> &'static str {
         match self {
-            ImageMode::Cdrom => "1",
-            ImageMode::Disk => "0",
+            ImageMode::Cdrom => crate::protocol::MODE_CDROM,
+            ImageMode::Disk => crate::protocol::MODE_MASS_STORAGE,
         }
     }
 
@@ -96,8 +96,8 @@ mod tests {
     }
 
     #[test]
-    fn cdrom_flag() {
-        assert_eq!(ImageMode::Cdrom.cdrom_flag(), "1");
-        assert_eq!(ImageMode::Disk.cdrom_flag(), "0");
+    fn mode_str() {
+        assert_eq!(ImageMode::Cdrom.mode_str(), "cdrom_mode");
+        assert_eq!(ImageMode::Disk.mode_str(), "mass_storage_mode");
     }
 }

@@ -2,13 +2,15 @@
 //!
 //! A dedicated Tokio runtime on a background thread runs the async zbus proxy
 //! and bridges to the GTK main loop with async channels. To expose an image we
-//! `set_config("image=…,cdrom=…")` then `set_mode("mass_storage_mode")`; to
-//! eject we `set_mode("developer_mode")`.
+//! point the current-image symlink at it then `set_mode("mass_storage_mode")`
+//! (or `"cdrom_mode"`); to eject we `set_mode("developer_mode")`.
 
 use std::sync::Arc;
 use std::thread;
 
-use bootdrive_common::{DriveState, ImageMode, MODE_MASS_STORAGE, MODE_NORMAL};
+use bootdrive_common::{
+    point_current_image, DriveState, ImageMode, MODE_CDROM, MODE_MASS_STORAGE, MODE_NORMAL,
+};
 use zbus::proxy;
 
 /// Update pushed from the D-Bus thread to the GTK thread.
@@ -30,8 +32,6 @@ pub enum DaemonUpdate {
 pub enum UnreachableReason {
     /// usb-signaller is not running / not reachable.
     NotRunning,
-    /// usb-signaller is running but has no `mass_storage_mode` (patch missing).
-    NoMassStorage,
     /// Any other failure.
     Other(String),
 }
@@ -64,8 +64,6 @@ trait UsbModed {
     fn mode_request(&self) -> zbus::Result<String>;
     #[zbus(name = "set_mode")]
     fn set_mode(&self, mode: &str) -> zbus::Result<String>;
-    #[zbus(name = "set_config")]
-    fn set_config(&self, config: &str) -> zbus::Result<String>;
 
     #[zbus(signal, name = "sig_usb_event_ind")]
     fn sig_usb_event_ind(&self, event: String) -> zbus::Result<()>;
@@ -81,7 +79,7 @@ pub struct DaemonClient {
 
 /// Map a USB mode string to our display state.
 fn state_from_mode(mode: &str) -> DriveState {
-    if mode == MODE_MASS_STORAGE {
+    if mode == MODE_MASS_STORAGE || mode == MODE_CDROM {
         DriveState::Active
     } else {
         DriveState::Idle
@@ -155,14 +153,15 @@ async fn worker(
         }
     };
 
-    // Require mass-storage support (our patch), else prompt to install it.
-    match proxy.get_modes().await {
-        Ok(modes) if modes.split(',').any(|m| m == MODE_MASS_STORAGE) => {}
-        Ok(_) => {
+    // Upstream usb-signaller does not advertise mass_storage_mode / cdrom_mode
+    // in get_modes (they need a configured backing image), so we cannot gate on
+    // that list. Instead, treat the service as available if it answers at all;
+    // a mode switch reports its own error if the modes are missing.
+    match proxy.mode_request().await {
+        Ok(mode) => {
             let _ = updates
-                .send(DaemonUpdate::Unreachable(UnreachableReason::NoMassStorage))
+                .send(DaemonUpdate::State(state_from_mode(&mode)))
                 .await;
-            return;
         }
         Err(_) => {
             let _ = updates
@@ -170,12 +169,6 @@ async fn worker(
                 .await;
             return;
         }
-    }
-
-    if let Ok(mode) = proxy.mode_request().await {
-        let _ = updates
-            .send(DaemonUpdate::State(state_from_mode(&mode)))
-            .await;
     }
 
     let proxy = Arc::new(proxy);
@@ -200,17 +193,17 @@ async fn worker(
     while let Ok(cmd) = commands.recv().await {
         match cmd {
             DaemonCommand::Activate { path, mode } => {
-                let config = format!("image={path},cdrom={}", mode.cdrom_flag());
-                if let Err(e) = proxy.set_config(&config).await {
+                if let Err(e) = point_current_image(std::path::Path::new(&path)) {
                     let _ = updates
                         .send(DaemonUpdate::Error {
-                            message: format!("could not set image: {e}"),
+                            message: format!("could not prepare the image: {e}"),
                         })
                         .await;
                     continue;
                 }
-                match proxy.set_mode(MODE_MASS_STORAGE).await {
-                    Ok(result) if result == MODE_MASS_STORAGE => {
+                let target_mode = mode.mode_str();
+                match proxy.set_mode(target_mode).await {
+                    Ok(result) if result == target_mode => {
                         let _ = updates.send(DaemonUpdate::State(DriveState::Active)).await;
                     }
                     Ok(other) => {

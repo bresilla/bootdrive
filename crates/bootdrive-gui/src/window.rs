@@ -1138,9 +1138,6 @@ impl Ui {
             UnreachableReason::NotRunning => {
                 "BootDrive could not reach usb-signaller on the system bus."
             }
-            UnreachableReason::NoMassStorage => {
-                "Your usb-signaller has no mass-storage mode yet. Install the patched build."
-            }
             UnreachableReason::Other(_) => "BootDrive could not talk to usb-signaller.",
         };
         self.setup_status.set_description(Some(desc));

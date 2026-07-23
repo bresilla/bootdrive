@@ -64,11 +64,10 @@ tar xzf bootdrive-cli-*.tar.gz
 BootDrive is unprivileged and sandboxed; it never writes to configfs itself. The
 USB-gadget work is done by postmarketOS's
 [usb-signaller](https://codeberg.org/DylanVanAssche/usb-signaller), which runs as
-root and owns the `com.meego.usb_moded` D-Bus interface. BootDrive talks to it
-over that interface. A small patch teaches usb-signaller a mass-storage and
-CD-ROM mode:
-
-- fork: <https://codeberg.org/bresilla/usb-signaller> (branch `mass-storage-mode`)
+root and owns the `com.meego.usb_moded` D-Bus interface. The `mass_storage_mode`
+and `cdrom_mode` are upstream in usb-signaller; the image path is set once in its
+config (`[mass_storage] storage_path`), pointing at a symlink BootDrive re-points
+at whatever you expose.
 
 If there's no compatible `usb-signaller` running, the app still opens; it just
 says no USB service is available.
@@ -77,8 +76,10 @@ says no USB service is available.
 
 1. The GUI copies your chosen image into its own data directory, through the
    file-chooser portal, so it needs no host filesystem access.
-2. It asks `com.meego.usb_moded` for `mass_storage_mode` or `cdrom_mode`.
-3. usb-signaller points the USB mass-storage gadget at that image, read-only.
+2. It points the current-image symlink at that copy and asks
+   `com.meego.usb_moded` for `mass_storage_mode` or `cdrom_mode`.
+3. usb-signaller reads its configured `storage_path` (the symlink) and points the
+   USB mass-storage gadget at the image, read-only.
 4. Eject removes the gadget and hands the USB port back to normal use.
 
 The Download tab reads [osinfo-db](https://gitlab.com/libosinfo/osinfo-db), the
